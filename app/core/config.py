@@ -154,6 +154,12 @@ class Settings:
         # 申请地址：https://lbs.amap.com/dev/key/app
         self.AMAP_API_KEY = os.getenv("AMAP_API_KEY", "")
         self.AMAP_MCP_ENABLED = os.getenv("AMAP_MCP_ENABLED", "true").lower() in ("true", "1", "yes")
+
+        # 和风天气配置
+        self.QWEATHER_KEY_ID = os.getenv("QWEATHER_KEY_ID", "")
+        self.QWEATHER_PROJECT_ID = os.getenv("QWEATHER_PROJECT_ID", "")
+        self.QWEATHER_PRIVATE_KEY = os.getenv("QWEATHER_PRIVATE_KEY", "")
+
         self.DASHSCOPE_BASE_URL = os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
         self.DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "gpt-5-mini")
         self.SESSION_NAMING_ENABLED = os.getenv("SESSION_NAMING_ENABLED", "true").lower() == "true"

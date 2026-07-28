@@ -45,6 +45,8 @@ dependencies = [
     "langchain-mcp-adapters>=0.2.2",
     "redis>=7.4.0",
     "ollama>=0.3.0",
+    "pyjwt>=2.10.1",
+    "cryptography>=44.0.2",
 ]
 
 # 可选依赖。
