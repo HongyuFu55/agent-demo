@@ -21,6 +21,7 @@ from .calculator import calculator
 from .duckduckgo_search import duckduckgo_search_tool
 from .mcp_client import get_langchain_mcp_tools
 from .amap_mcp import get_amap_mcp_servers
+from .code_interpreter import execute_python_code
 from .file_ops import list_workspace_files, read_workspace_file, write_workspace_file
 from .qweather import get_weather_now, search_location_id
 
@@ -34,6 +35,7 @@ static_tools: list[BaseTool] = [
     list_workspace_files,
     read_workspace_file,
     write_workspace_file,
+    execute_python_code,
 ]
 
 

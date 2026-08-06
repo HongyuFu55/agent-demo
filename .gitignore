@@ -36,3 +36,6 @@ logs/
 
 # Reports
 evals/reports/
+
+# Gemini
+.gemini/
