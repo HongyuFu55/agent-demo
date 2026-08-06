@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import (
@@ -11,7 +12,8 @@ from fastapi import (
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 
 from asgi_correlation_id import CorrelationIdMiddleware
@@ -193,6 +195,18 @@ app.add_middleware(
 # 挂载 API 路由
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
+# 挂载静态文件目录与 Agent 测试页面
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+
+@app.get("/test")
+async def test_page():
+    """Agent 高颜值测试与诊断页面."""
+    index_file = Path(__file__).parent / "static" / "index.html"
+    return FileResponse(index_file)
+
 
 @app.get("/")
 @limiter.limit(settings.RATE_LIMIT_ENDPOINTS["root"][0])
@@ -206,6 +220,7 @@ async def root(request: Request):
         "environment": settings.ENVIRONMENT.value,
         "swagger_url": "/docs",
         "redoc_url": "/redoc",
+        "test_url": "/test",
     }
 
 
