@@ -14,7 +14,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from app.core.logging import logger
 from app.models.chat_message import ChatMessage
 from app.models.session import Session as ChatSession
-from app.models.user import User
 from app.services.database import database_service
 
 # 危险关键字黑名单，严格禁止任何写/修改/删除/结构变更操作
@@ -222,4 +221,4 @@ async def execute_sql_query(sql_query: str) -> str:
 
     except Exception as e:
         logger.exception("text_to_sql_failed", sql=clean_sql, error=str(e))
-        return f"❌ SQL 执行报错：{str(e)}\n请检查表名/列名拼写是否正确。（注意：表名 \"user\" 必须加双引号）"
+        return f"[ERROR] SQL 执行报错：{str(e)}\n请检查表名/列名拼写是否正确。（注意：表名 \"user\" 必须加双引号）"
