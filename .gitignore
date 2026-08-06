@@ -22,6 +22,9 @@ wheels/
 # Scratch / debug scripts (local only)
 scratch/
 
+# Runtime storage / sandbox workspace
+storage/
+
 # Logs
 logs/
 
