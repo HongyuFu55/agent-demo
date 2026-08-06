@@ -22,6 +22,7 @@ from .duckduckgo_search import duckduckgo_search_tool
 from .mcp_client import get_langchain_mcp_tools
 from .amap_mcp import get_amap_mcp_servers
 from .code_interpreter import execute_python_code
+from .db_query import execute_sql_query, query_session_history, query_user_sessions
 from .file_ops import list_workspace_files, read_workspace_file, write_workspace_file
 from .qweather import get_weather_now, search_location_id
 
@@ -36,6 +37,9 @@ static_tools: list[BaseTool] = [
     read_workspace_file,
     write_workspace_file,
     execute_python_code,
+    query_session_history,
+    query_user_sessions,
+    execute_sql_query,
 ]
 
 

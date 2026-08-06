@@ -56,18 +56,24 @@ async def write_file(path: str, content: str) -> str:
 
 ---
 
-#### 3. 数据库查询工具（结合项目已有的 PostgreSQL）
+#### 3. 数据库查询工具与 Text-to-SQL（结合项目 PostgreSQL ORM）
 ```python
 @tool
-async def query_chat_history(user_id: int, limit: int = 10) -> str:
-    """查询用户的历史对话记录。"""
+async def query_session_history(session_id: str, limit: int = 10) -> str:
+    """查询指定会话的历史问答记录。"""
     # 复用项目里的 database_service
+
+@tool
+async def execute_sql_query(sql_query: str) -> str:
+    """在 PostgreSQL 数据库中安全执行只读 SELECT 查询（Text-to-SQL 核心工具）。"""
+    # 带 SQL 只读校验与安全拦截 (禁止 DROP/DELETE/UPDATE 等)
 ```
 
 **学习点**：
-- 工具如何复用项目已有的 Service 层
-- 异步数据库操作
-- 结果序列化（Pydantic → 字符串）
+- 工具如何复用项目已有的 `database_service` 与 SQLModel ORM 模型
+- **Text-to-SQL 核心架构**：向 LLM 暴露数据库 Schema，让大模型自主撰写 SQL
+- **SQL 安全防护网**：只读防范、单条 SELECT 强制拦截与异常捕获
+- 结果序列化（ORM 对象 / SQL Result → 结构化 Markdown）
 
 ---
 

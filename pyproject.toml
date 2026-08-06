@@ -47,6 +47,8 @@ dependencies = [
     "ollama>=0.3.0",
     "pyjwt>=2.10.1",
     "cryptography>=44.0.2",
+    "pandas>=2.2.0",
+    "openpyxl>=3.1.2",
 ]
 
 # 可选依赖。
