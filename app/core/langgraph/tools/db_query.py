@@ -84,18 +84,18 @@ async def query_session_history(session_id: str, limit: int = 10) -> str:
         if not messages:
             return f"未在会话 '{session_id}' 中查找到任何历史消息记录。"
 
-        # 按时间正序排列展示
-        messages.reverse()
+        messages_list = list(messages)
+        messages_list.reverse()
         formatted_dialogues = []
-        for idx, msg in enumerate(messages, 1):
+        for idx, msg in enumerate(messages_list, 1):
             formatted_dialogues.append(
                 f"【轮次 {idx}】({msg.created_at.strftime('%Y-%m-%d %H:%M:%S') if msg.created_at else '未知时间'})\n"
                 f"[用户提问] {msg.question}\n"
                 f"[AI回答] {msg.answer}"
             )
 
-        logger.info("query_session_history_success", session_id=session_id, count=len(messages))
-        return f"--- 会话 [{session_id}] 历史记录 (共 {len(messages)} 轮) ---\n\n" + "\n\n".join(formatted_dialogues)
+        logger.info("query_session_history_success", session_id=session_id, count=len(messages_list))
+        return f"--- 会话 [{session_id}] 历史记录 (共 {len(messages_list)} 轮) ---\n\n" + "\n\n".join(formatted_dialogues)
 
     except Exception as e:
         logger.exception("query_session_history_failed", session_id=session_id, error=str(e))
@@ -200,7 +200,7 @@ async def execute_sql_query(sql_query: str) -> str:
 
     try:
         with Session(database_service.engine) as session:
-            result = session.exec(text(clean_sql))
+            result = session.execute(text(clean_sql))
             keys = list(result.keys())
             rows = result.all()
 
