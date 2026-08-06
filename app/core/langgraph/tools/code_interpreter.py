@@ -11,6 +11,7 @@ from langchain_core.tools import tool
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.logging import logger
+from app.core.langgraph.tools.file_ops import WORKSPACE_DIR
 
 # 代码执行默认超时限制 (30 秒)，防止死循环卡死服务，同时兼容 pandas/numpy 模块加载
 EXEC_TIMEOUT_SECONDS = 30.0
@@ -24,7 +25,7 @@ MAX_OUTPUT_LENGTH = 4000
 async def execute_python_code(code: str) -> str:
     """在独立的子进程中安全动态执行 Python 代码并返回 stdout/stderr 输出。
 
-    适用于数据分析 (如 pandas 读取 Excel/CSV)、复杂数学运算、数据格式转换等任务。
+    代码执行的根工作目录为 storage/workspace/，代码中可以直接使用相对路径读写工作区文件（如 "docs/2026/数据.xlsx"）。
     代码中可以通过 print(...) 输出需要查看的结果。
 
     参数：
@@ -37,7 +38,6 @@ async def execute_python_code(code: str) -> str:
     clean_code = code.strip()
     if clean_code.startswith("```"):
         lines = clean_code.splitlines()
-        # 去掉第一行 ```python 和最后一行 ```
         if len(lines) >= 2:
             clean_code = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
 
@@ -48,13 +48,17 @@ async def execute_python_code(code: str) -> str:
         env = dict(os.environ)
         env["PYTHONIOENCODING"] = "utf-8"
 
-        # 使用当前的 sys.executable 启动独立 Python 子进程运行代码
+        # 保证 WORKSPACE_DIR 目录存在
+        WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+
+        # 使用当前的 sys.executable 启动独立 Python 子进程运行代码，设置 cwd 为 WORKSPACE_DIR
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-c",
             clean_code,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=WORKSPACE_DIR,
             env=env,
         )
 
