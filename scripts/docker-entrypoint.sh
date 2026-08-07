@@ -86,5 +86,8 @@ echo "Debug Mode: ${DEBUG:-false}"
 # Run database migrations if necessary
 # e.g., alembic upgrade head
 
+# Ensure virtual environment is in sync with uv.lock
+uv sync --frozen --default-index https://pypi.tuna.tsinghua.edu.cn/simple
+
 # Execute the CMD
 exec "$@"

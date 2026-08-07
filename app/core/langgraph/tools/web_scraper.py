@@ -77,6 +77,22 @@ async def scrape_webpage(url: str, max_chars: int = 4000) -> str:
         # 优先提取 <main> 或 <article> 标签内容，若无则提取 <body>
         main_content = soup.find("main") or soup.find("article") or soup.body or soup
 
+        # 2.1 将 HTML 中的 <table> 标签自动转化为 Markdown 表格文本
+        for table in main_content.find_all("table"):
+            table_md = []
+            rows = table.find_all("tr")
+            for r in rows:
+                cols = [td.get_text(strip=True) for td in r.find_all(["th", "td"])]
+                if cols:
+                    table_md.append("| " + " | ".join(cols) + " |")
+            if table_md:
+                # 插入分隔符行
+                if len(table_md) > 1:
+                    header_cols = len(table_md[0].split("|")) - 2
+                    sep_line = "| " + " | ".join(["---"] * max(1, header_cols)) + " |"
+                    table_md.insert(1, sep_line)
+                table.replace_with(soup.new_string("\n\n" + "\n".join(table_md) + "\n\n"))
+
         raw_text = main_content.get_text(separator="\n")
 
         # 3. 清理多余空行与空白字符
