@@ -24,6 +24,7 @@ from .amap_mcp import get_amap_mcp_servers
 from .code_interpreter import execute_python_code
 from .db_query import execute_sql_query, query_session_history, query_user_sessions
 from .file_ops import list_workspace_files, read_workspace_file, write_workspace_file
+from .image_analyzer import analyze_image
 from .qweather import get_weather_now, search_location_id
 from .web_scraper import scrape_webpage
 
@@ -42,6 +43,7 @@ static_tools: list[BaseTool] = [
     query_user_sessions,
     execute_sql_query,
     scrape_webpage,
+    analyze_image,
 ]
 
 
