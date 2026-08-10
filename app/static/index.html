@@ -474,6 +474,80 @@
       color: var(--accent-rose);
     }
 
+    /* Image Lightbox Modal (Full-Screen Image Viewer) */
+    .image-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(8, 12, 24, 0.88);
+      backdrop-filter: blur(18px);
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      padding: 1.5rem;
+    }
+
+    .image-modal-backdrop.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .image-modal-toolbar {
+      width: 100%;
+      max-width: 90vw;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.8rem;
+      color: var(--text-main);
+      font-size: 0.9rem;
+    }
+
+    .image-modal-container {
+      position: relative;
+      max-width: 90vw;
+      max-height: 85vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .image-modal-img {
+      max-width: 90vw;
+      max-height: 82vh;
+      border-radius: var(--radius-md);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 0 1px var(--glass-border);
+      object-fit: contain;
+      cursor: zoom-out;
+      transform: scale(0.95);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .image-modal-backdrop.active .image-modal-img {
+      transform: scale(1);
+    }
+
+    /* Clickable Image in Chat Bubbles */
+    .chat-img-thumb {
+      max-width: 240px;
+      max-height: 160px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--glass-border);
+      display: block;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+    }
+
+    .chat-img-thumb:hover {
+      transform: scale(1.02);
+      border-color: var(--accent-cyan);
+      box-shadow: 0 6px 20px rgba(6, 182, 212, 0.3);
+    }
+
     .chat-textarea {
       flex: 1;
       background: rgba(0, 0, 0, 0.3);
@@ -1034,8 +1108,21 @@
               const attachLine = lines[0];
               const restText = lines.slice(1).join('\n');
               const match = attachLine.match(/\[附件文件:\s*(.*?)\]/);
-              const fileName = match ? match[1].split('/').pop() : '附件';
-              parsedContent = `<div style="margin-bottom: 0.3rem; font-size: 0.8rem; color: var(--accent-cyan);">📎 附件: ${escapeHtml(fileName)}</div>` + escapeHtml(restText);
+              const filePath = match ? match[1].trim() : '';
+              const fileName = filePath.split('/').pop() || '附件';
+              const isImage = /\.(png|jpe?g|webp|bmp)$/i.test(fileName);
+
+              let attachHtml = '';
+              if (isImage && filePath) {
+                const imgUrl = `/workspace/${filePath}`;
+                attachHtml = `<div style="margin-bottom: 0.5rem;">
+                  <img src="${imgUrl}" class="chat-img-thumb" alt="${escapeHtml(fileName)}" title="点击放大查看高清大图 🔍" onclick="openImageModal('${imgUrl}', '${escapeHtml(fileName)}')" />
+                </div>`;
+              } else {
+                attachHtml = `<div style="margin-bottom: 0.3rem; font-size: 0.8rem; color: var(--accent-cyan);">📎 附件: ${escapeHtml(fileName)}</div>`;
+              }
+
+              parsedContent = attachHtml + (restText ? escapeHtml(restText) : '<span style="color: var(--text-muted); font-size: 0.85rem;">(上传了附件图片)</span>');
             } else {
               parsedContent = escapeHtml(raw);
             }
@@ -1130,7 +1217,7 @@
 
       previewBar.style.display = 'flex';
       const iconOrImg = currentAttachment.localPreviewUrl
-        ? `<img src="${currentAttachment.localPreviewUrl}" class="attachment-thumb" alt="预览" />`
+        ? `<img src="${currentAttachment.localPreviewUrl}" class="attachment-thumb" alt="预览" style="cursor: pointer;" onclick="openImageModal('${currentAttachment.localPreviewUrl}', '${escapeHtml(currentAttachment.file_name)}')" />`
         : (currentAttachment.file_category === 'table' ? '📊' : '📄');
 
       previewBar.innerHTML = `
@@ -1212,10 +1299,12 @@
       if (currentAttachment) {
         // 结构化隐式携带相对路径，Agent 自动感知并无感调用工具
         payloadContent = `[附件文件: ${currentAttachment.relative_path}]\n${payloadContent}`;
-        // 前端用户展示：优雅地呈现文件名和图片，不显示底层路径
+        // 前端用户展示：渲染带点击放大事件的缩略图
+        const previewSrc = currentAttachment.localPreviewUrl || `/workspace/${currentAttachment.relative_path}`;
+        const fileName = escapeHtml(currentAttachment.file_name);
         const attachBadge = currentAttachment.localPreviewUrl
-          ? `<div style="margin-bottom: 0.5rem;"><img src="${currentAttachment.localPreviewUrl}" style="max-width: 220px; max-height: 140px; border-radius: 8px; border: 1px solid var(--glass-border); display: block;" /></div>`
-          : `<div style="margin-bottom: 0.3rem; font-size: 0.8rem; color: var(--accent-cyan);">📎 附件: ${escapeHtml(currentAttachment.file_name)}</div>`;
+          ? `<div style="margin-bottom: 0.5rem;"><img src="${previewSrc}" class="chat-img-thumb" alt="${fileName}" title="点击放大查看高清大图 🔍" onclick="openImageModal('${previewSrc}', '${fileName}')" /></div>`
+          : `<div style="margin-bottom: 0.3rem; font-size: 0.8rem; color: var(--accent-cyan);">📎 附件: ${fileName}</div>`;
         displayContent = attachBadge + (text ? escapeHtml(text) : '<span style="color: var(--text-muted); font-size: 0.85rem;">(上传了附件图片)</span>');
         
         removeAttachment();
@@ -1386,11 +1475,68 @@
       }
     }
 
+    // ==========================================
+    // Lightbox Full-Screen Modal Logic
+    // ==========================================
+    function openImageModal(src, title = '图片预览') {
+      if (!src) return;
+      const modal = document.getElementById('image-modal');
+      const img = document.getElementById('modal-image');
+      const titleEl = document.getElementById('modal-image-title');
+      const downloadBtn = document.getElementById('modal-download-btn');
+
+      img.src = src;
+      titleEl.innerText = title;
+      downloadBtn.href = src;
+      modal.classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeImageModal() {
+      const modal = document.getElementById('image-modal');
+      if (modal) {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+        setTimeout(() => {
+          const img = document.getElementById('modal-image');
+          if (img) img.src = '';
+        }, 250);
+      }
+    }
+
+    function handleModalBackdropClick(e) {
+      if (e.target.id === 'image-modal' || e.target.classList.contains('image-modal-container')) {
+        closeImageModal();
+      }
+    }
+
+    // ESC Key to close modal
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeImageModal();
+      }
+    });
+
     function escapeHtml(text) {
       return text.replace(/[&<>"']/g, function(m) {
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
       });
     }
   </script>
+
+  <!-- Full-Screen Image Lightbox Modal -->
+  <div id="image-modal" class="image-modal-backdrop" onclick="handleModalBackdropClick(event)">
+    <div class="image-modal-toolbar">
+      <div id="modal-image-title" style="font-weight: 600; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 60%;">图片预览</div>
+      <div style="display: flex; gap: 0.6rem; align-items: center;">
+        <a id="modal-download-btn" class="btn" style="font-size: 0.8rem; padding: 0.35rem 0.8rem; text-decoration: none;" download="image.png" target="_blank">⬇ 下载原图</a>
+        <button type="button" class="btn btn-danger" onclick="closeImageModal()" style="font-size: 0.8rem; padding: 0.35rem 0.8rem;">✖ 关闭 (ESC)</button>
+      </div>
+    </div>
+    <div class="image-modal-container">
+      <img id="modal-image" class="image-modal-img" src="" alt="大图预览" onclick="closeImageModal()" title="点击关闭大图" />
+    </div>
+  </div>
+
 </body>
 </html>

@@ -200,6 +200,11 @@ static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
+# 挂载工作区目录 (供前端预览与放大查看上传的图片与文档)
+workspace_dir = Path(__file__).parent.parent / "storage" / "workspace"
+workspace_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/workspace", StaticFiles(directory=str(workspace_dir)), name="workspace")
+
 
 @app.get("/test")
 async def test_page():
