@@ -427,6 +427,51 @@
       display: flex;
       gap: 0.6rem;
       align-items: flex-end;
+      position: relative;
+    }
+
+    /* Attachment Preview Bar */
+    .attachment-preview-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      padding: 0.4rem 0.2rem;
+      animation: fadeIn 0.2s ease-in-out;
+    }
+
+    .attachment-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 0.75rem;
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      border-radius: var(--radius-sm);
+      font-size: 0.8rem;
+      color: var(--text-main);
+      backdrop-filter: blur(8px);
+    }
+
+    .attachment-thumb {
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      object-fit: cover;
+    }
+
+    .attachment-chip .btn-remove-attachment {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.9rem;
+      line-height: 1;
+      padding: 0 0.2rem;
+      transition: color 0.15s;
+    }
+
+    .attachment-chip .btn-remove-attachment:hover {
+      color: var(--accent-rose);
     }
 
     .chat-textarea {
@@ -443,11 +488,39 @@
       max-height: 150px;
       overflow-y: auto;
       line-height: 1.4;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .chat-textarea.drag-over {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 12px rgba(6, 182, 212, 0.35);
+      background: rgba(6, 182, 212, 0.05);
     }
 
     .chat-textarea:focus {
       outline: none;
       border-color: var(--accent-primary);
+    }
+
+    .btn-attach {
+      height: 48px;
+      padding: 0 0.9rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius-sm);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-attach:hover {
+      background: rgba(99, 102, 241, 0.2);
+      border-color: var(--accent-primary);
+      color: var(--text-main);
     }
 
     /* Tabs */
@@ -593,12 +666,20 @@
 
       <!-- Chat Input Box (Fixed at Bottom) -->
       <div class="chat-input-box">
+        <!-- Attachment Preview Chips Area -->
+        <div id="attachment-preview-bar" class="attachment-preview-bar" style="display: none;"></div>
+
         <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted);">
           <label><input type="checkbox" id="stream-mode" checked /> 启用 SSE 流式输出 (chat/stream)</label>
           <span id="stream-status"></span>
         </div>
+
         <div class="chat-input-row">
-          <textarea id="user-input" class="chat-textarea" placeholder="输入问题发送给 LangGraph Agent (Enter 发送, Shift+Enter 换行)..." oninput="autoResizeTextarea(this)" onkeydown="handleKeyPress(event)"></textarea>
+          <!-- Hidden File Input -->
+          <input type="file" id="file-upload-input" style="display: none;" onchange="handleFileSelected(event)" accept="image/*,.xlsx,.xls,.csv,.txt,.md,.pdf" />
+          <button type="button" class="btn-attach" onclick="triggerFileUpload()" title="上传图片或数据文件 (或直接粘贴/拖拽文件)">📎</button>
+          
+          <textarea id="user-input" class="chat-textarea" placeholder="输入问题发送给 Agent (支持 Enter 发送, 直接粘贴图片 Ctrl+V 或拖拽文件)..." oninput="autoResizeTextarea(this)" onkeydown="handleKeyPress(event)"></textarea>
           <button class="btn btn-primary" onclick="sendMessage()" style="padding: 0.7rem 1.2rem; height: 48px;">发送</button>
         </div>
       </div>
@@ -941,7 +1022,28 @@
 
       container.innerHTML = currentMessages.map(msg => {
         const isUser = msg.role === 'user';
-        const parsedContent = isUser ? escapeHtml(msg.content) : marked.parse(msg.content);
+        let parsedContent = '';
+        if (isUser) {
+          if (msg.displayHtml) {
+            parsedContent = msg.displayHtml;
+          } else {
+            // 处理从历史读取出来的消息中含 [附件文件: users/...] 的情况
+            let raw = msg.content || '';
+            if (raw.startsWith('[附件文件:')) {
+              const lines = raw.split('\n');
+              const attachLine = lines[0];
+              const restText = lines.slice(1).join('\n');
+              const match = attachLine.match(/\[附件文件:\s*(.*?)\]/);
+              const fileName = match ? match[1].split('/').pop() : '附件';
+              parsedContent = `<div style="margin-bottom: 0.3rem; font-size: 0.8rem; color: var(--accent-cyan);">📎 附件: ${escapeHtml(fileName)}</div>` + escapeHtml(restText);
+            } else {
+              parsedContent = escapeHtml(raw);
+            }
+          }
+        } else {
+          parsedContent = marked.parse(msg.content || '');
+        }
+
         return `
           <div class="msg-row">
             <div class="msg-bubble ${isUser ? 'msg-user' : 'msg-assistant'}">${parsedContent}</div>
@@ -950,6 +1052,138 @@
 
       scrollToBottom();
     }
+
+    // ==========================================
+    // Attachment & File Upload Handling
+    // ==========================================
+    let currentAttachment = null;
+
+    function triggerFileUpload() {
+      if (!currentToken) return alert('请先登录！');
+      if (!currentSessionId) return alert('请先选择或新建会话！');
+      document.getElementById('file-upload-input').click();
+    }
+
+    function handleFileSelected(e) {
+      const file = e.target.files && e.target.files[0];
+      if (file) {
+        uploadFile(file);
+      }
+      e.target.value = ''; // Reset input
+    }
+
+    async function uploadFile(file) {
+      if (!currentToken) return alert('请先登录！');
+      if (!currentSessionId) return alert('请先选择或新建会话！');
+
+      const previewBar = document.getElementById('attachment-preview-bar');
+      previewBar.style.display = 'flex';
+      previewBar.innerHTML = `
+        <div class="attachment-chip" style="opacity: 0.7;">
+          <span>⏳ 正在上传 ${escapeHtml(file.name)} (${(file.size / 1024).toFixed(1)} KB)...</span>
+        </div>`;
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('session_id', currentSessionId);
+
+      try {
+        const res = await fetch(`${API_BASE}/chatbot/upload`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${currentToken}`
+          },
+          body: formData
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || '上传失败');
+
+        // 生成本地临时预览 Blob URL (如果是图片)
+        let localPreviewUrl = '';
+        if (file.type.startsWith('image/')) {
+          localPreviewUrl = URL.createObjectURL(file);
+        }
+
+        currentAttachment = {
+          file_name: data.file_name,
+          relative_path: data.relative_path,
+          file_category: data.file_category,
+          file_size: data.file_size,
+          localPreviewUrl: localPreviewUrl
+        };
+
+        renderAttachmentPreview();
+      } catch (err) {
+        alert(`文件上传失败: ${err.message}`);
+        removeAttachment();
+      }
+    }
+
+    function renderAttachmentPreview() {
+      const previewBar = document.getElementById('attachment-preview-bar');
+      if (!currentAttachment) {
+        previewBar.style.display = 'none';
+        previewBar.innerHTML = '';
+        return;
+      }
+
+      previewBar.style.display = 'flex';
+      const iconOrImg = currentAttachment.localPreviewUrl
+        ? `<img src="${currentAttachment.localPreviewUrl}" class="attachment-thumb" alt="预览" />`
+        : (currentAttachment.file_category === 'table' ? '📊' : '📄');
+
+      previewBar.innerHTML = `
+        <div class="attachment-chip">
+          ${iconOrImg}
+          <span><strong>${escapeHtml(currentAttachment.file_name)}</strong> <small style="color: var(--text-muted);">(${(currentAttachment.file_size / 1024).toFixed(1)} KB)</small></span>
+          <button type="button" class="btn-remove-attachment" onclick="removeAttachment()" title="移除附件">✖</button>
+        </div>`;
+    }
+
+    function removeAttachment() {
+      currentAttachment = null;
+      renderAttachmentPreview();
+    }
+
+    // Bind Drag & Drop and Clipboard Paste on textarea
+    document.addEventListener('DOMContentLoaded', () => {
+      const textarea = document.getElementById('user-input');
+      if (!textarea) return;
+
+      // Drag and Drop
+      textarea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        textarea.classList.add('drag-over');
+      });
+      textarea.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        textarea.classList.remove('drag-over');
+      });
+      textarea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        textarea.classList.remove('drag-over');
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          uploadFile(e.dataTransfer.files[0]);
+        }
+      });
+
+      // Clipboard Paste (Ctrl+V 截图直接上传)
+      textarea.addEventListener('paste', (e) => {
+        if (!e.clipboardData || !e.clipboardData.items) return;
+        const items = e.clipboardData.items;
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type.indexOf('image') !== -1) {
+            const blob = items[i].getAsFile();
+            if (blob) {
+              e.preventDefault();
+              uploadFile(blob);
+              break;
+            }
+          }
+        }
+      });
+    });
 
     // KeyPress Handler
     function handleKeyPress(e) {
@@ -966,12 +1200,30 @@
 
       const inputEl = document.getElementById('user-input');
       const text = inputEl.value.trim();
-      if (!text) return;
+      if (!text && !currentAttachment) return;
 
       inputEl.value = '';
       autoResizeTextarea(inputEl);
 
-      currentMessages.push({ role: 'user', content: text });
+      // 构建请求内容与展示内容
+      let payloadContent = text || '请分析我上传的文件/图片。';
+      let displayContent = text;
+
+      if (currentAttachment) {
+        // 结构化隐式携带相对路径，Agent 自动感知并无感调用工具
+        payloadContent = `[附件文件: ${currentAttachment.relative_path}]\n${payloadContent}`;
+        // 前端用户展示：优雅地呈现文件名和图片，不显示底层路径
+        const attachBadge = currentAttachment.localPreviewUrl
+          ? `<div style="margin-bottom: 0.5rem;"><img src="${currentAttachment.localPreviewUrl}" style="max-width: 220px; max-height: 140px; border-radius: 8px; border: 1px solid var(--glass-border); display: block;" /></div>`
+          : `<div style="margin-bottom: 0.3rem; font-size: 0.8rem; color: var(--accent-cyan);">📎 附件: ${escapeHtml(currentAttachment.file_name)}</div>`;
+        displayContent = attachBadge + (text ? escapeHtml(text) : '<span style="color: var(--text-muted); font-size: 0.85rem;">(上传了附件图片)</span>');
+        
+        removeAttachment();
+      } else {
+        displayContent = escapeHtml(displayContent);
+      }
+
+      currentMessages.push({ role: 'user', content: payloadContent, displayHtml: displayContent });
       renderMessages();
       scrollToBottom(true);
 

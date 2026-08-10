@@ -48,6 +48,7 @@ services:
     volumes:
       - ./app:/app/app
       - ./logs:/app/logs
+      - ./storage:/app/storage
     env_file:
       - .env.${APP_ENV:-development}
     environment:

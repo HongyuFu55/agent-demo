@@ -4,19 +4,27 @@
 """
 
 import json
+import os
+import re
+from datetime import datetime
+from pathlib import Path
 
 from fastapi import (
     APIRouter,
     Depends,
+    File,
+    Form,
     HTTPException,
     Query,
     Request,
+    UploadFile,
 )
 from fastapi.responses import StreamingResponse
 
 from app.api.v1.auth import get_current_user
 from app.core.config import settings
 from app.core.langgraph.graph import LangGraphAgent
+from app.core.langgraph.tools.file_ops import WORKSPACE_DIR
 from app.core.limiter import limiter
 from app.core.logging import logger
 from app.core.metrics import llm_stream_duration_seconds
@@ -282,3 +290,132 @@ async def clear_chat_history(
     except Exception as e:
         logger.exception("clear_chat_history_failed", session_id=session_id, error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# 允许上传的文件扩展名白名单
+ALLOWED_UPLOAD_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".bmp",
+    ".xlsx",
+    ".xls",
+    ".csv",
+    ".txt",
+    ".md",
+    ".json",
+    ".pdf",
+}
+MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB
+
+
+@router.post("/upload")
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["upload"][0])
+async def upload_file(
+    request: Request,
+    file: UploadFile = File(...),
+    session_id: str = Form(..., description="所属会话 ID"),
+    user: User = Depends(get_current_user),
+):
+    """用户会话隔离的文件与图片上传接口.
+
+    安全特性：
+    1. 校验会话所属权，防止越权写入其他用户的会话；
+    2. 严格文件名清洗与防路径穿越（过滤 ../、绝对路径）；
+    3. 隔离存储于 storage/workspace/users/{user_id}/{session_id}/；
+    4. 扩展名白名单与文件大小限制 (15MB)。
+    """
+    try:
+        # 1. 验证会话归属权
+        session = await get_owned_session(session_id, user)
+
+        # 2. 验证原始文件名并提取扩展名
+        raw_filename = file.filename or ""
+        if not raw_filename.strip():
+            raise HTTPException(status_code=400, detail="Uploaded file must have a valid filename")
+
+        # 防路径穿越：提取纯文件名，去除任何目录前缀
+        base_filename = Path(raw_filename).name
+        if ".." in base_filename or "/" in base_filename or "\\" in base_filename:
+            logger.warning(
+                "upload_path_traversal_attempt_blocked",
+                raw_filename=raw_filename,
+                user_id=user.id,
+                session_id=session.id,
+            )
+            raise HTTPException(status_code=400, detail="Malicious path traversal sequence detected in filename")
+
+        # 扩展名白名单校验
+        file_ext = Path(base_filename).suffix.lower()
+        if file_ext not in ALLOWED_UPLOAD_EXTENSIONS:
+            logger.warning("upload_unsupported_file_extension", ext=file_ext, user_id=user.id)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file extension '{file_ext}'. Allowed: {sorted(list(ALLOWED_UPLOAD_EXTENSIONS))}",
+            )
+
+        # 3. 构建用户与会话隔离沙箱目录
+        # 目录规则：storage/workspace/users/{user_id}/{session_id}/
+        user_session_dir = (WORKSPACE_DIR / "users" / str(user.id) / str(session.id)).resolve()
+        user_session_dir.mkdir(parents=True, exist_ok=True)
+
+        # 清洗文件名并加入时间戳前缀，防止同名覆盖
+        clean_name = re.sub(r"[^\w\.\-\u4e00-\u9fa5]", "_", Path(base_filename).stem)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_saved_filename = f"{timestamp}_{clean_name}{file_ext}"
+
+        target_file_path = (user_session_dir / safe_saved_filename).resolve()
+
+        # 防路径穿越二次强断言：目标物理路径必须位于当前用户会话沙箱目录之内
+        try:
+            target_file_path.relative_to(user_session_dir)
+        except ValueError:
+            logger.error("upload_sandbox_escape_detected", target_path=str(target_file_path))
+            raise HTTPException(status_code=400, detail="Invalid destination path outside session sandbox")
+
+        # 4. 读取内容并做大小限制校验，安全落盘
+        content = await file.read()
+        file_size = len(content)
+        if file_size > MAX_FILE_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large ({file_size} bytes). Maximum allowed is {MAX_FILE_SIZE_BYTES} bytes (15MB).",
+            )
+
+        with open(target_file_path, "wb") as f:
+            f.write(content)
+
+        # 5. 生成相对于工作区的安全相对路径
+        relative_path_for_agent = f"users/{user.id}/{session.id}/{safe_saved_filename}"
+
+        # 判定文件大类
+        is_image = file_ext in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+        is_table = file_ext in {".xlsx", ".xls", ".csv"}
+        file_category = "image" if is_image else ("table" if is_table else "document")
+
+        logger.info(
+            "file_uploaded_successfully",
+            user_id=user.id,
+            session_id=session.id,
+            file_name=base_filename,
+            saved_path=relative_path_for_agent,
+            size_bytes=file_size,
+        )
+
+        return {
+            "success": True,
+            "file_name": base_filename,
+            "saved_name": safe_saved_filename,
+            "relative_path": relative_path_for_agent,
+            "file_size": file_size,
+            "file_category": file_category,
+            "content_type": file.content_type or "application/octet-stream",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("file_upload_failed", user_id=user.id, session_id=session_id, error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to process file upload: {str(e)}")
+
