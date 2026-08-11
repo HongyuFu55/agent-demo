@@ -15,6 +15,9 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
   <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
 
+  <!-- Three.js (3D Quantum Core & Particle Mesh) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
   <!-- Anime.js (Local Bundle + CDN Fallback) -->
   <script src="/static/anime.min.js"></script>
   <script>
@@ -27,12 +30,13 @@
 
   <style>
     :root {
-      --bg-primary: #070a13;
-      --bg-secondary: #0c1222;
-      --bg-tertiary: #131c35;
-      --glass-bg: rgba(12, 18, 34, 0.72);
-      --glass-border: rgba(255, 255, 255, 0.08);
-      --glass-hover-border: rgba(6, 182, 212, 0.4);
+      --bg-primary: #050811;
+      --bg-secondary: #090e1c;
+      --bg-tertiary: #10172c;
+      --glass-bg: rgba(9, 15, 29, 0.62);
+      --glass-card: rgba(14, 22, 42, 0.65);
+      --glass-border: rgba(255, 255, 255, 0.09);
+      --glass-hover-border: rgba(6, 182, 212, 0.5);
       
       --accent-primary: #6366f1;
       --accent-violet: #8b5cf6;
@@ -41,8 +45,8 @@
       --accent-rose: #f43f5e;
       --accent-warning: #f59e0b;
       --accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #06b6d4 100%);
-      --accent-glow: 0 0 25px rgba(99, 102, 241, 0.35);
-      --cyan-glow: 0 0 20px rgba(6, 182, 212, 0.4);
+      --accent-glow: 0 0 30px rgba(99, 102, 241, 0.4);
+      --cyan-glow: 0 0 25px rgba(6, 182, 212, 0.45);
 
       --text-main: #f8fafc;
       --text-muted: #94a3b8;
@@ -52,12 +56,12 @@
       --font-mono: 'JetBrains Mono', monospace;
 
       --radius-sm: 8px;
-      --radius-md: 12px;
-      --radius-lg: 20px;
+      --radius-md: 14px;
+      --radius-lg: 24px;
 
       --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
-      --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.5);
-      --shadow-neon: 0 0 30px rgba(99, 102, 241, 0.25);
+      --shadow-md: 0 12px 36px rgba(0, 0, 0, 0.55);
+      --shadow-neon: 0 0 35px rgba(6, 182, 212, 0.28);
 
       --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
       --transition-normal: 250ms var(--ease-spring);
@@ -623,6 +627,40 @@
       color: var(--text-main);
     }
 
+    /* 3D Quantum Core & Quick Prompt Chips */
+    .welcome-3d-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2.5rem 1rem;
+      text-align: center;
+      animation: fadeIn 0.8s ease-out;
+    }
+
+    .quick-prompt-chip {
+      background: rgba(14, 22, 42, 0.75);
+      border: 1px solid var(--glass-border);
+      padding: 0.55rem 1.1rem;
+      border-radius: 99px;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      cursor: pointer;
+      backdrop-filter: blur(12px);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .quick-prompt-chip:hover {
+      border-color: var(--accent-cyan);
+      color: var(--text-main);
+      background: rgba(6, 182, 212, 0.15);
+      transform: translateY(-3px) scale(1.03);
+      box-shadow: 0 8px 24px rgba(6, 182, 212, 0.3);
+    }
+
     /* Tabs */
     .tabs {
       display: flex;
@@ -664,6 +702,9 @@
 
   <!-- Ambient Interactive Particle Canvas -->
   <canvas id="ambient-canvas"></canvas>
+
+  <!-- Global Click Energy Burst Canvas (Anime.js Powered) -->
+  <canvas id="click-burst-canvas" style="position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9999;"></canvas>
 
   <!-- Header Navbar -->
   <header class="header">
@@ -933,6 +974,209 @@
       drawParticles();
     }
 
+    // ==========================================
+    // Three.js 3D Quantum Core Engine
+    // ==========================================
+    let threeRenderer = null;
+    let threeAnimId = null;
+
+    function init3DQuantumCore() {
+      const container = document.getElementById('quantum-3d-canvas-box');
+      if (!container || typeof THREE === 'undefined') return;
+
+      if (threeAnimId) {
+        cancelAnimationFrame(threeAnimId);
+        threeAnimId = null;
+      }
+      container.innerHTML = '';
+
+      const width = container.clientWidth || 220;
+      const height = container.clientHeight || 220;
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+      camera.position.z = 7.5;
+
+      const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      container.appendChild(renderer.domElement);
+
+      // Core 1: Glowing Icosahedron Wireframe
+      const icoGeo = new THREE.IcosahedronGeometry(1.6, 1);
+      const icoMat = new THREE.MeshBasicMaterial({
+        color: 0x06b6d4,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.85
+      });
+      const icoMesh = new THREE.Mesh(icoGeo, icoMat);
+      scene.add(icoMesh);
+
+      // Core 2: Inner Solid Glowing Octahedron
+      const innerGeo = new THREE.OctahedronGeometry(0.9, 0);
+      const innerMat = new THREE.MeshBasicMaterial({
+        color: 0x8b5cf6,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.75
+      });
+      const innerMesh = new THREE.Mesh(innerGeo, innerMat);
+      scene.add(innerMesh);
+
+      // Orbit Ring 1
+      const ring1Geo = new THREE.TorusGeometry(2.4, 0.03, 16, 100);
+      const ring1Mat = new THREE.MeshBasicMaterial({ color: 0x6366f1, transparent: true, opacity: 0.8 });
+      const ring1 = new THREE.Mesh(ring1Geo, ring1Mat);
+      ring1.rotation.x = Math.PI / 3;
+      scene.add(ring1);
+
+      // Orbit Ring 2
+      const ring2Geo = new THREE.TorusGeometry(2.8, 0.025, 16, 100);
+      const ring2Mat = new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.65 });
+      const ring2 = new THREE.Mesh(ring2Geo, ring2Mat);
+      ring2.rotation.y = Math.PI / 4;
+      scene.add(ring2);
+
+      // Nebula Particles
+      const particleCount = 220;
+      const particleGeo = new THREE.BufferGeometry();
+      const positions = new Float32Array(particleCount * 3);
+      for (let i = 0; i < particleCount * 3; i += 3) {
+        const r = 2.0 + Math.random() * 2.2;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos((Math.random() * 2) - 1);
+        positions[i] = r * Math.sin(phi) * Math.cos(theta);
+        positions[i + 1] = r * Math.sin(phi) * Math.sin(theta);
+        positions[i + 2] = r * Math.cos(phi);
+      }
+      particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const particleMat = new THREE.PointsMaterial({
+        color: 0x38bdf8,
+        size: 0.07,
+        transparent: true,
+        opacity: 0.85
+      });
+      const particles = new THREE.Points(particleGeo, particleMat);
+      scene.add(particles);
+
+      let targetRotX = 0;
+      let targetRotY = 0;
+      container.addEventListener('mousemove', (e) => {
+        const rect = container.getBoundingClientRect();
+        const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const ny = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+        targetRotY = nx * 0.8;
+        targetRotX = -ny * 0.8;
+      });
+      container.addEventListener('mouseleave', () => {
+        targetRotX = 0;
+        targetRotY = 0;
+      });
+
+      function animate() {
+        threeAnimId = requestAnimationFrame(animate);
+        icoMesh.rotation.x += 0.008;
+        icoMesh.rotation.y += 0.012;
+        innerMesh.rotation.x -= 0.015;
+        innerMesh.rotation.z += 0.01;
+
+        ring1.rotation.z += 0.014;
+        ring2.rotation.x += 0.01;
+        ring2.rotation.z -= 0.008;
+        particles.rotation.y += 0.003;
+
+        // Smooth Lerp Tilt
+        scene.rotation.x += (targetRotX - scene.rotation.x) * 0.08;
+        scene.rotation.y += (targetRotY - scene.rotation.y) * 0.08;
+
+        renderer.render(scene, camera);
+      }
+      animate();
+    }
+
+    // ==========================================
+    // Anime.js Global Click Energy Burst Engine
+    // ==========================================
+    function initClickBurstEngine() {
+      const canvas = document.getElementById('click-burst-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      window.addEventListener('resize', () => {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      });
+
+      const burstColors = ['#06b6d4', '#6366f1', '#8b5cf6', '#38bdf8', '#f43f5e'];
+
+      window.addEventListener('pointerdown', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+        const count = 18;
+        const particles = [];
+        for (let i = 0; i < count; i++) {
+          const angle = (Math.PI * 2 / count) * i + (Math.random() - 0.5) * 0.5;
+          const speed = Math.random() * 60 + 25;
+          particles.push({
+            x: e.clientX,
+            y: e.clientY,
+            targetX: e.clientX + Math.cos(angle) * speed,
+            targetY: e.clientY + Math.sin(angle) * speed,
+            radius: Math.random() * 3.5 + 1.5,
+            color: burstColors[Math.floor(Math.random() * burstColors.length)],
+            alpha: 1,
+            scale: 1
+          });
+        }
+
+        if (typeof anime !== 'undefined') {
+          anime({
+            targets: particles,
+            x: (p) => p.targetX,
+            y: (p) => p.targetY,
+            alpha: 0,
+            scale: 0.2,
+            duration: 650,
+            easing: 'easeOutExpo',
+            update: () => {
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+              particles.forEach(p => {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, Math.max(0.1, p.radius * p.scale), 0, Math.PI * 2);
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = Math.max(0, p.alpha);
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = p.color;
+                ctx.fill();
+              });
+              ctx.globalAlpha = 1;
+              ctx.shadowBlur = 0;
+            }
+          });
+        }
+      });
+    }
+
+    // Quick Fill Prompt
+    function quickFillPrompt(text) {
+      const textarea = document.getElementById('user-input');
+      if (!textarea) return;
+      textarea.value = text;
+      autoResizeTextarea(textarea);
+      textarea.focus();
+
+      if (typeof anime !== 'undefined') {
+        anime({
+          targets: textarea,
+          boxShadow: ['0 0 0 rgba(6, 182, 212, 0)', '0 0 22px rgba(6, 182, 212, 0.65)', '0 0 0 rgba(6, 182, 212, 0)'],
+          duration: 800,
+          easing: 'easeOutQuad'
+        });
+      }
+    }
+
     // Page Entrance Anime Timeline
     function playPageEntrance() {
       if (typeof anime === 'undefined') return;
@@ -972,6 +1216,7 @@
     // On Load
     window.addEventListener('DOMContentLoaded', () => {
       initAmbientParticles();
+      initClickBurstEngine();
       playPageEntrance();
 
       checkHealth();
@@ -1266,9 +1511,29 @@
       const container = document.getElementById('chat-inner-container');
       if (currentMessages.length === 0) {
         container.innerHTML = `
-          <div class="msg-row">
-            <div class="msg-bubble msg-assistant">本会话暂无历史消息，请输入问题向 Agent 提问。</div>
+          <div class="welcome-3d-wrapper">
+            <div id="quantum-3d-canvas-box" style="width: 220px; height: 220px; position: relative; margin-bottom: 0.5rem; cursor: grab;" title="按住鼠标滑过可 3D 旋转视角"></div>
+            
+            <div style="font-size: 1.35rem; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 0.4rem;">
+              <span style="background: var(--accent-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">NexusAI 3D 智能中枢已就绪</span>
+            </div>
+            <div style="color: var(--text-muted); font-size: 0.85rem; max-width: 480px; line-height: 1.6; margin-bottom: 1.4rem;">
+              全异步非阻塞架构 • 163 邮箱通知 • 高德地图 MCP • 多模态视觉 • 动态记忆防护
+            </div>
+
+            <div style="display: flex; flex-wrap: wrap; gap: 0.6rem; justify-content: center; max-width: 620px;">
+              <div class="quick-prompt-chip" onclick="quickFillPrompt('帮我规划从冉家坝到南坪的路线，并将总结发送邮件给 517020213@qq.com')">
+                🚗 路线规划与邮件汇报
+              </div>
+              <div class="quick-prompt-chip" onclick="quickFillPrompt('计算 1.08 的 365 次方是多少？')">
+                ⚡ 高精度数学计算
+              </div>
+              <div class="quick-prompt-chip" onclick="quickFillPrompt('请查询今天重庆的天气情况')">
+                🌤️ 实时天气查询
+              </div>
+            </div>
           </div>`;
+        setTimeout(init3DQuantumCore, 60);
         return;
       }
 
