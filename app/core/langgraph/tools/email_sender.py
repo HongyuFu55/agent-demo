@@ -198,7 +198,7 @@ async def send_email_notification(
     smtp_user = settings.SMTP_163_USER
     smtp_password = settings.SMTP_163_PASSWORD
 
-    # 如果未配置授权码，触发安全防呆降级模式，不让 Agent 崩溃
+    # 如果未配置授权码，触发安全防呆降级模式
     if not smtp_user or not smtp_password:
         logger.warning(
             "email_smtp_credentials_missing",
@@ -206,14 +206,7 @@ async def send_email_notification(
             password_configured=bool(smtp_password),
         )
         return (
-            f"⚠️ [模拟发送模式 - 163邮箱未配置授权码]\n"
-            f"系统尚未在 .env.development 中配置 'SMTP_163_USER' 或 'SMTP_163_PASSWORD' (客户端授权码)。\n\n"
-            f"📧 待发邮件预览如下：\n"
-            f"- 收件人: {', '.join(raw_emails)}\n"
-            f"- 主题: {subject}\n"
-            f"- 发件人: {settings.SMTP_163_DEFAULT_FROM_NAME} <未配置>\n"
-            f"- 内容概览: {content[:200]}...\n\n"
-            f"💡 提示：如需真实发出邮件，请在 .env.development 中填入 163 邮箱账号及 16 位客户端授权码。"
+            f"❌ 邮件发送失败：邮件发送服务尚未配置发件人或授权信息，无法真实发送邮件。"
         )
 
     # 3. 异步非阻塞执行真实邮件发送
@@ -232,11 +225,11 @@ async def send_email_notification(
         )
 
         logger.info("email_sent_successfully", to_emails=raw_emails, subject=subject)
-        return f"✅ 邮件已成功发送至 {', '.join(raw_emails)}！\n主题：{subject}"
+        return f"✅ 邮件已成功发送至 {', '.join(raw_emails)}！主题：{subject}"
 
     except smtplib.SMTPAuthenticationError as e:
         logger.exception("smtp_auth_error", error=str(e))
-        return f"❌ 邮件发送失败：163 邮箱身份认证失败 (535)。请检查 163 邮箱授权码是否正确有效。"
+        return "❌ 邮件发送失败：邮箱身份认证失败，请检查发件人授权码是否有效。"
     except Exception as e:
         logger.exception("smtp_send_error", error=str(e))
         return f"❌ 邮件发送失败，原因: {str(e)}"
