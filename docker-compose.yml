@@ -54,6 +54,7 @@ services:
     environment:
       - APP_ENV=${APP_ENV:-development}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-supersecretkeythatshouldbechangedforproduction}
+      - TZ=Asia/Shanghai
     depends_on:
       db:
         condition: service_healthy
