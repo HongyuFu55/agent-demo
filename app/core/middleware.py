@@ -98,6 +98,9 @@ class LoggingContextMiddleware(BaseHTTPMiddleware):
         path         = request.url.path
         method       = request.method
 
+        _SILENT_PATHS = {"/health", "/api/v1/health", "/metrics", "/favicon.ico"}
+        is_silent = path in _SILENT_PATHS
+
         try:
             # 清理上一次请求残留的上下文
             clear_context()
@@ -117,7 +120,7 @@ class LoggingContextMiddleware(BaseHTTPMiddleware):
                     # token 无效时不在中间件失败，交给鉴权依赖处理
                     pass
 
-            if path != "/metrics":
+            if not is_silent:
                 # 收集请求参数用于日志
                 query_params = dict(request.query_params) or None
                 body_for_log = None
@@ -168,7 +171,8 @@ class LoggingContextMiddleware(BaseHTTPMiddleware):
             status_code = 500
             raise
         finally:
-            if path != "/metrics":
+            # 只有在非静音路径，或者静音路径报错 (status >= 400) 时才记录完成日志
+            if not is_silent or status_code >= 400:
                 duration_ms = round((time.time() - start_time) * 1000, 2)
                 logger.info(
                     "请求完成",

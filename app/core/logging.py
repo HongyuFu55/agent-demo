@@ -368,6 +368,19 @@ def get_structlog_processors() -> List[Any]:
     ]
 
 
+class EndpointFilter(logging.Filter):
+    """过滤健康检查、指标等高频探测请求的 access 日志，保持控制台整洁."""
+
+    def __init__(self, excluded_paths: tuple[str, ...] = ("/health", "/api/v1/health", "/metrics")):
+        super().__init__()
+        self.excluded_paths = excluded_paths
+
+    @override
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not any(path in msg for path in self.excluded_paths)
+
+
 def setup_logging() -> None:
     """配置 structlog，所有环境统一使用 text 格式.
 
@@ -388,6 +401,9 @@ def setup_logging() -> None:
         level=log_level,
         handlers=[console_handler],
     )
+
+    # 过滤 uvicorn.access 中高频轮询的 /health 和 /metrics
+    logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
 
     # 第三方 HTTP 客户端日志太吵，只保留 WARNING 以上
     for logger_name in NOISY_THIRD_PARTY_LOGGERS:

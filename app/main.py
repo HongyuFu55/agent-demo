@@ -238,8 +238,6 @@ async def health_check(request: Request) -> JSONResponse:
         JSONResponse: Health status payload, with HTTP 503 when the
         database is unreachable so load balancers can drop the instance.
     """
-    logger.info("health_check_called")
-
     # 检查数据库连接状态
     db_healthy = await database_service.health_check()
 

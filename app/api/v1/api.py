@@ -27,5 +27,4 @@ async def health_check():
     返回：
         dict: 健康状态信息。
     """
-    logger.info("health_check_called")
     return {"status": "healthy", "version": "1.0.0"}
