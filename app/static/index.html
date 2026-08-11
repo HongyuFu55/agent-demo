@@ -3,38 +3,50 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NexusAI Agent 测试台 & 接口诊断</title>
+  <title>NexusAI Agent 极客智能终端</title>
   
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 
   <!-- Markdown & Code Highlighting (Marked.js & Highlight.js) -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
   <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
 
+  <!-- Anime.js (Local Bundle + CDN Fallback) -->
+  <script src="/static/anime.min.js"></script>
+  <script>
+    if (typeof anime === 'undefined') {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js';
+      document.head.appendChild(script);
+    }
+  </script>
+
   <style>
     :root {
-      --bg-primary: hsl(222, 47%, 7%);
-      --bg-secondary: hsl(222, 40%, 11%);
-      --bg-tertiary: hsl(222, 35%, 15%);
-      --glass-bg: rgba(22, 28, 45, 0.7);
-      --glass-border: rgba(255, 255, 255, 0.1);
-      --glass-hover-border: rgba(255, 255, 255, 0.22);
+      --bg-primary: #070a13;
+      --bg-secondary: #0c1222;
+      --bg-tertiary: #131c35;
+      --glass-bg: rgba(12, 18, 34, 0.72);
+      --glass-border: rgba(255, 255, 255, 0.08);
+      --glass-hover-border: rgba(6, 182, 212, 0.4);
       
-      --accent-primary: hsl(250, 84%, 67%);
-      --accent-cyan: hsl(188, 94%, 55%);
-      --accent-green: hsl(150, 80%, 45%);
-      --accent-rose: hsl(340, 82%, 62%);
-      --accent-warning: hsl(40, 95%, 55%);
-      --accent-gradient: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-cyan) 100%);
-      --accent-glow: 0 0 25px rgba(99, 102, 241, 0.25);
+      --accent-primary: #6366f1;
+      --accent-violet: #8b5cf6;
+      --accent-cyan: #06b6d4;
+      --accent-green: #10b981;
+      --accent-rose: #f43f5e;
+      --accent-warning: #f59e0b;
+      --accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #06b6d4 100%);
+      --accent-glow: 0 0 25px rgba(99, 102, 241, 0.35);
+      --cyan-glow: 0 0 20px rgba(6, 182, 212, 0.4);
 
-      --text-main: hsl(210, 40%, 98%);
-      --text-muted: hsl(215, 20%, 65%);
-      --text-dim: hsl(215, 15%, 45%);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
 
       --font-sans: 'Plus Jakarta Sans', -apple-system, sans-serif;
       --font-mono: 'JetBrains Mono', monospace;
@@ -43,8 +55,9 @@
       --radius-md: 12px;
       --radius-lg: 20px;
 
-      --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.2);
-      --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.5);
+      --shadow-neon: 0 0 30px rgba(99, 102, 241, 0.25);
 
       --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
       --transition-normal: 250ms var(--ease-spring);
@@ -58,28 +71,41 @@
       overflow: hidden;
       background: var(--bg-primary);
       background-image: 
-        radial-gradient(at 10% 10%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
-        radial-gradient(at 90% 90%, rgba(6, 182, 212, 0.12) 0px, transparent 50%);
+        radial-gradient(at 15% 15%, rgba(99, 102, 241, 0.18) 0px, transparent 55%),
+        radial-gradient(at 85% 85%, rgba(6, 182, 212, 0.15) 0px, transparent 55%),
+        radial-gradient(at 50% 50%, rgba(139, 92, 246, 0.08) 0px, transparent 65%);
       color: var(--text-main);
       font-family: var(--font-sans);
       display: flex;
       flex-direction: column;
+      position: relative;
+    }
+
+    /* Ambient Particle Canvas */
+    #ambient-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.7;
     }
 
     /* Sleek Custom Scrollbars (ChatGPT / DeepSeek style) */
     ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
+      width: 5px;
+      height: 5px;
     }
     ::-webkit-scrollbar-track {
       background: transparent;
     }
     ::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.12);
       border-radius: 99px;
     }
     ::-webkit-scrollbar-thumb:hover {
-      background: rgba(255, 255, 255, 0.3);
+      background: rgba(6, 182, 212, 0.4);
     }
 
     /* Navbar */
@@ -636,11 +662,14 @@
 </head>
 <body>
 
+  <!-- Ambient Interactive Particle Canvas -->
+  <canvas id="ambient-canvas"></canvas>
+
   <!-- Header Navbar -->
   <header class="header">
     <div class="brand">
       <div class="brand-icon">⚡</div>
-      <div class="brand-text">Nexus<span>AI</span> Agent 测试台</div>
+      <div class="brand-text">Nexus<span>AI</span> Agent 极客智能终端</div>
     </div>
     
     <div class="status-bar">
@@ -807,6 +836,128 @@
     let currentMessages = [];
     let isUserScrolledUp = false;
 
+    // ==========================================
+    // Anime.js Interactive Ambient Particle Engine
+    // ==========================================
+    function initAmbientParticles() {
+      const canvas = document.getElementById('ambient-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      let width = (canvas.width = window.innerWidth);
+      let height = (canvas.height = window.innerHeight);
+
+      window.addEventListener('resize', () => {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+      });
+
+      const particleColors = ['rgba(99, 102, 241, ', 'rgba(6, 182, 212, ', 'rgba(139, 92, 246, '];
+      const particles = [];
+      const particleCount = Math.min(Math.floor(window.innerWidth / 20), 70);
+
+      let mouse = { x: null, y: null, radius: 120 };
+      window.addEventListener('mousemove', (e) => {
+        mouse.x = e.x;
+        mouse.y = e.y;
+      });
+      window.addEventListener('mouseleave', () => {
+        mouse.x = null;
+        mouse.y = null;
+      });
+
+      for (let i = 0; i < particleCount; i++) {
+        particles.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          size: Math.random() * 2.2 + 0.8,
+          vx: (Math.random() - 0.5) * 0.45,
+          vy: (Math.random() - 0.5) * 0.45,
+          baseColor: particleColors[Math.floor(Math.random() * particleColors.length)],
+          alpha: Math.random() * 0.6 + 0.2,
+        });
+      }
+
+      function drawParticles() {
+        ctx.clearRect(0, 0, width, height);
+
+        for (let i = 0; i < particles.length; i++) {
+          const p = particles[i];
+          p.x += p.vx;
+          p.y += p.vy;
+
+          if (p.x < 0) p.x = width;
+          if (p.x > width) p.x = 0;
+          if (p.y < 0) p.y = height;
+          if (p.y > height) p.y = 0;
+
+          // Mouse interaction (Repulsion / Swirl)
+          if (mouse.x !== null) {
+            const dx = mouse.x - p.x;
+            const dy = mouse.y - p.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < mouse.radius) {
+              const force = (mouse.radius - dist) / mouse.radius;
+              p.x -= (dx / dist) * force * 2.5;
+              p.y -= (dy / dist) * force * 2.5;
+            }
+          }
+
+          // Draw Particle
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fillStyle = p.baseColor + p.alpha + ')';
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = p.baseColor + '0.8)';
+          ctx.fill();
+          ctx.shadowBlur = 0;
+
+          // Connect nearby particles (Constellation effect)
+          for (let j = i + 1; j < particles.length; j++) {
+            const p2 = particles[j];
+            const dist = Math.hypot(p.x - p2.x, p.y - p2.y);
+            if (dist < 110) {
+              ctx.beginPath();
+              ctx.moveTo(p.x, p.y);
+              ctx.lineTo(p2.x, p2.y);
+              const lineAlpha = (1 - dist / 110) * 0.18;
+              ctx.strokeStyle = `rgba(148, 163, 184, ${lineAlpha})`;
+              ctx.lineWidth = 0.75;
+              ctx.stroke();
+            }
+          }
+        }
+
+        requestAnimationFrame(drawParticles);
+      }
+
+      drawParticles();
+    }
+
+    // Page Entrance Anime Timeline
+    function playPageEntrance() {
+      if (typeof anime === 'undefined') return;
+      anime.timeline({ easing: 'easeOutQuart' })
+        .add({
+          targets: '.header',
+          translateY: [-24, 0],
+          opacity: [0, 1],
+          duration: 650
+        })
+        .add({
+          targets: '.ui-panel',
+          translateX: [-25, 0],
+          opacity: [0, 1],
+          duration: 700,
+          delay: anime.stagger(100)
+        }, '-=400')
+        .add({
+          targets: '.chat-main',
+          scale: [0.98, 1],
+          opacity: [0, 1],
+          duration: 700
+        }, '-=550');
+    }
+
     // Init Marked.js & Highlight.js
     marked.setOptions({
       highlight: function(code, lang) {
@@ -820,6 +971,9 @@
 
     // On Load
     window.addEventListener('DOMContentLoaded', () => {
+      initAmbientParticles();
+      playPageEntrance();
+
       checkHealth();
       setInterval(checkHealth, 10000);
 
@@ -989,11 +1143,23 @@
         }
 
         container.innerHTML = sessions.map(s => `
-          <div class="session-item ${s.session_id === currentSessionId ? 'active' : ''}" onclick="selectSession('${s.session_id}', '${s.name}')">
-            <span class="session-name">💬 ${s.name || s.session_id.substring(0, 8)}</span>
+          <div class="session-item ${s.session_id === currentSessionId ? 'active' : ''}" onclick="selectSession('${s.session_id}', '${escapeHtml(s.name)}')">
+            <span class="session-name">💬 ${escapeHtml(s.name || s.session_id.substring(0, 8))}</span>
             <button class="btn btn-danger" style="font-size: 0.65rem; padding: 0.1rem 0.3rem;" onclick="deleteSession(event, '${s.session_id}')">删除</button>
           </div>
         `).join('');
+
+        // Anime.js Stagger animation for session items
+        if (typeof anime !== 'undefined') {
+          anime({
+            targets: '.session-item',
+            translateX: [-18, 0],
+            opacity: [0, 1],
+            delay: anime.stagger(45),
+            duration: 500,
+            easing: 'easeOutCubic'
+          });
+        }
 
         if (!currentSessionId && sessions.length > 0) {
           selectSession(sessions[0].session_id, sessions[0].name);
@@ -1060,6 +1226,18 @@
         currentMessages = data.messages || [];
         renderMessages();
         scrollToBottom(true);
+
+        // Anime.js Stagger for message history bubbles
+        if (typeof anime !== 'undefined') {
+          anime({
+            targets: '.msg-bubble',
+            translateY: [16, 0],
+            opacity: [0, 1],
+            delay: anime.stagger(30),
+            duration: 550,
+            easing: 'easeOutCubic'
+          });
+        }
       } catch (err) {
         console.error(err);
       }
@@ -1476,7 +1654,7 @@
     }
 
     // ==========================================
-    // Lightbox Full-Screen Modal Logic
+    // Lightbox Full-Screen Modal Logic (Anime.js Spring Zoom)
     // ==========================================
     function openImageModal(src, title = '图片预览') {
       if (!src) return;
@@ -1490,6 +1668,16 @@
       downloadBtn.href = src;
       modal.classList.add('active');
       document.body.style.overflow = 'hidden';
+
+      if (typeof anime !== 'undefined') {
+        anime({
+          targets: '#modal-image',
+          scale: [0.75, 1],
+          opacity: [0, 1],
+          duration: 450,
+          easing: 'easeOutBack'
+        });
+      }
     }
 
     function closeImageModal() {

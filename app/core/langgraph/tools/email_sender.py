@@ -25,36 +25,102 @@ def _validate_email(email_str: str) -> bool:
 
 
 def _build_html_content(subject: str, content: str) -> str:
-    """构建极具现代科技美感的 HTML 邮件模板."""
-    # 将换行符转为 HTML <br>
-    html_paragraphs = "".join([f"<p style='margin: 0.6rem 0; line-height: 1.6;'>{line}</p>" for line in content.split("\n") if line.strip()])
+    """构建极具现代科技美感与 Anime.js 极客风格的 HTML 邮件模板."""
+    paragraphs = []
+    for raw_line in content.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("- ") or line.startswith("* "):
+            paragraphs.append(f"<li style='margin: 0.4rem 0; color: #cbd5e1; list-style-type: none; position: relative; padding-left: 1.2rem;'><span style='position: absolute; left: 0; color: #06b6d4; font-weight: bold;'>◈</span> {line[2:]}</li>")
+        elif line.startswith("#"):
+            title_text = line.lstrip("# ").strip()
+            paragraphs.append(f"<h3 style='margin: 1.2rem 0 0.5rem 0; color: #38bdf8; font-size: 16px; border-bottom: 1px solid rgba(56, 189, 248, 0.2); padding-bottom: 4px;'>{title_text}</h3>")
+        elif line.startswith(">"):
+            paragraphs.append(f"<blockquote style='margin: 0.8rem 0; padding: 0.6rem 1rem; background: rgba(30, 41, 59, 0.6); border-left: 3px solid #8b5cf6; border-radius: 4px; color: #94a3b8; font-style: italic;'>{line.lstrip('> ')}</blockquote>")
+        else:
+            paragraphs.append(f"<p style='margin: 0.6rem 0; line-height: 1.7; color: #e2e8f0;'>{line}</p>")
+
+    body_html = "".join(paragraphs)
 
     return f"""
     <!DOCTYPE html>
     <html>
     <head>
       <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0b0f19; color: #e2e8f0; margin: 0; padding: 20px; }}
-        .email-container {{ max-width: 600px; margin: 0 auto; background: #131b2e; border: 1px solid #23324d; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }}
-        .email-header {{ background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%); padding: 24px; color: #ffffff; }}
-        .email-header h2 {{ margin: 0; font-size: 20px; font-weight: 600; letter-spacing: 0.5px; }}
-        .email-body {{ padding: 24px; font-size: 15px; color: #cbd5e1; }}
-        .email-footer {{ background: #0c1220; padding: 16px 24px; font-size: 12px; color: #64748b; border-top: 1px solid #1e293b; text-align: center; }}
-        .badge {{ display: inline-block; background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4); padding: 4px 10px; border-radius: 6px; font-size: 12px; margin-bottom: 12px; }}
+        body {{
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+          background-color: #060913;
+          color: #e2e8f0;
+          margin: 0;
+          padding: 24px 12px;
+        }}
+        .email-wrapper {{
+          max-width: 620px;
+          margin: 0 auto;
+          background: linear-gradient(180deg, #0e1526 0%, #080d1a 100%);
+          border: 1px solid rgba(59, 130, 246, 0.25);
+          border-radius: 16px;
+          overflow: hidden;
+          box-shadow: 0 20px 50px rgba(0,0,0,0.8), 0 0 30px rgba(6, 182, 212, 0.12);
+        }}
+        .email-header {{
+          background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 60%, #042f2e 100%);
+          padding: 28px 24px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+          position: relative;
+        }}
+        .badge {{
+          display: inline-flex;
+          align-items: center;
+          background: rgba(6, 182, 212, 0.15);
+          color: #22d3ee;
+          border: 1px solid rgba(6, 182, 212, 0.35);
+          padding: 4px 12px;
+          border-radius: 20px;
+          font-size: 11px;
+          font-weight: 600;
+          letter-spacing: 0.8px;
+          margin-bottom: 14px;
+          box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+        }}
+        .email-title {{
+          margin: 0;
+          font-size: 21px;
+          font-weight: 700;
+          color: #ffffff;
+          line-height: 1.4;
+          letter-spacing: 0.3px;
+        }}
+        .email-body {{
+          padding: 28px 24px;
+          font-size: 14.5px;
+        }}
+        .email-footer {{
+          background: #050811;
+          padding: 20px 24px;
+          font-size: 12px;
+          color: #64748b;
+          border-top: 1px solid rgba(255, 255, 255, 0.05);
+          text-align: center;
+          line-height: 1.6;
+        }}
       </style>
     </head>
     <body>
-      <div class="email-container">
+      <div class="email-wrapper">
         <div class="email-header">
-          <div class="badge">🤖 FastAPI LangGraph AI Assistant</div>
-          <h2>{subject}</h2>
+          <div class="badge">⚡ FASTAPI LANGGRAPH AGENT NOTIFICATION</div>
+          <h2 class="email-title">{subject}</h2>
         </div>
         <div class="email-body">
-          {html_paragraphs}
+          {body_html}
         </div>
         <div class="email-footer">
-          此邮件由 FastAPI LangGraph AI Agent 智能助手自动发送，请勿直接回复。
+          <div>🚀 本邮件由 <strong>FastAPI LangGraph AI 智能助手</strong> 自动生成并发送</div>
+          <div style="margin-top: 4px; font-size: 11px; color: #475569;">© 2026 FastAPI LangGraph Agent Project • Powered by Anime.js Aesthetics</div>
         </div>
       </div>
     </body>
