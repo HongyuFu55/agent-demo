@@ -52,6 +52,7 @@ dependencies = [
     "httpx>=0.28.1",
     "beautifulsoup4>=4.13.0",
     "pillow>=11.0.0",
+    "python-docx>=1.1.0",
 ]
 
 # 可选依赖。
