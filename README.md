@@ -1,319 +1,186 @@
 # fastapi-langgraph-agent-zh
 
-> 基于 [fastapi-langgraph-agent-production-ready-template](https://github.com/wassim249/fastapi-langgraph-agent-production-ready-template) 的中文适配版本，面向国内开发者的生产级 LangGraph 工作流编排框架。
+> 基于 [fastapi-langgraph-agent-production-ready-template](https://github.com/wassim249/fastapi-langgraph-agent-production-ready-template) 的中文适配版本，面向国内开发者的生产级 LangGraph 多智能体工作流编排与 3D 极客交互框架。
 
 ---
 
-## 项目简介
+## 🌟 项目简介
 
-本项目是一个开箱即用的 **LangGraph + FastAPI 生产级智能体模板**，适合作为国内团队构建 AI Agent 应用的起点。
+本项目是一个开箱即用的 **LangGraph + FastAPI + MCP 生产级智能体应用框架**，专为国内团队构建高性能、高安全、可观测、高颜值的 AI Agent 应用而打造。
 
-在原项目基础上完成了以下工作：
-- 全面的中文注释，降低阅读和接手门槛
-- 对接阿里云 DashScope（Qwen 系列模型 + qwen-embedding）
-- 完整的本地链路调试验证（PostgreSQL + pgvector + mem0 + pg_jieba）
-- 认证流程简化、日志系统重构
-
----
-
-## 核心能力
-
-| 能力 | 实现方式 |
-|---|---|
-| 异步 REST API | FastAPI |
-| AI Agent 工作流编排 | LangGraph（StateGraph + 工具调用） |
-| LLM 调用 / 重试 / Fallback | LangChain + tenacity |
-| 长期记忆 | mem0 + pgvector + qwen-embedding |
-| 中文语义检索 | pg_jieba 分词插件 | （待定）
-| 业务数据 + Checkpoint 持久化 | PostgreSQL + SQLModel |
-| 用户鉴权 | JWT（登录 token 全程通用） |
-| 结构化日志 | structlog（本地彩色 / 容器纯文本统一格式） |
-| 指标监控 | Prometheus + Grafana |
-| LLM 链路追踪 | Langfuse |
-| 限流 | slowapi |
+### ✨ 核心扩展与升级特性：
+- 🛠️ **多工具生态与 MCP 集成**：内置高德地图 MCP 全套工具（15+）、网页搜索抓取、Python 沙箱执行、多模态视觉识别与 **163 网易邮箱 SMTP 异步通知**。
+- 🛡️ **企业级安全与物理沙箱隔离**：多租户会话文件物理隔离存储（`storage/workspace/users/...`），具备防路径穿越（Anti-Path Traversal）双重硬拦截。
+- 🧠 **双层防污染长期记忆架构 (mem0ai + pgvector)**：代码级 Gatekeeper 守门过滤 + 第一性原理记忆提炼 Prompt，杜绝即时计算与路况等临时任务污染长期记忆库。
+- 🪐 **Three.js 3D 实时量子中枢与 Anime.js 动效体系**：前端全屏 Canvas 星座微光粒子网、Three.js 3D 旋转量子核心、Anime.js 全局点击能量粒子爆破与物理弹性阻尼交互。
+- ⚡ **无感直达交互体验**：自动静默鉴权直达会话树、毫秒级网络延时探测、全屏图片灯箱预览（Lightbox Modal）。
+- 📊 **全链路可观测性**：structlog 结构化日志（高频探针日志智能静默）、Prometheus + Grafana 监控大盘、Langfuse 链路追踪。
 
 ---
 
-## 相较于原项目的改动
+## 核心能力总览
 
-### 1. 认证流程简化
-
-**原流程：** 登录 → 获取 token → 调用 `/session` 换取新 token → 使用新 token 请求
-
-**现流程：** 登录 → 获取 token → 直接使用该 token 请求所有接口
-
-去除冗余的 session 换 token 步骤，客户端逻辑更简单。
-
----
-
-### 2. 长期记忆向量化方案替换
-
-| | 原项目 | 本项目 |
+| 维度 | 核心能力 | 实现方式 |
 |---|---|---|
-| 向量表 | mem0migrations | longterm_memory_qwen_1024_v2 |
-| Embedding 模型 | OpenAI text-embedding | 阿里云 qwen-text-embedding-v3 |
-| 向量维度 | 1536 | 1024 |
-| 适用网络环境 | 海外 OpenAI | 国内阿里云 DashScope |
+| **API 框架** | 异步 RESTful API & SSE 流式输出 | FastAPI · uvicorn · Pydantic v2 |
+| **Agent 工作流** | 复杂状态机图编排、工具自动路由 | LangGraph（StateGraph + ToolNode） |
+| **大模型生态** | 多模型负载、重试机制、降级回退 | DashScope (Qwen2.5 / DeepSeek) · Ollama · tenacity |
+| **外部工具生态** | 高德地图全套 API (15+ 工具) | MCP (Model Context Protocol) streamable_http |
+| **通知工具** | 163 邮箱 SMTP over SSL (465) 异步通知 | Python `smtplib.SMTP_SSL` + `asyncio.to_thread` |
+| **长期记忆** | 用户画像提炼、向量语义搜索、防污染 | mem0ai + PostgreSQL + pgvector + 阿里云 embedding |
+| **安全与沙箱** | 多租户文件隔离存储、严格防路径穿越 | `Path.relative_to` 断言 + 文件扩展名白名单 |
+| **前端交互** | 3D 实时量子球、粒子爆破、极客毛玻璃 | Three.js + Anime.js + Marked.js + Highlight.js |
+| **数据持久化** | 业务数据、对话历史、Agent Checkpoint | PostgreSQL 15+ · SQLModel · AsyncPostgresSaver |
+| **系统鉴权** | 统一 JWT 认证、无感静默登录、会话归属校验 | JWT (HS256) · OAuth2 Password Bearer |
+| **限流防刷** | 用户 ID / IP 智能限流与友好响应 | slowapi · 自定义 RateLimitHandler |
+| **可观测性** | LLM 深度追踪、指标监控、探针静默日志 | structlog · Langfuse Callback · Prometheus · Grafana |
 
 ---
 
-### 3. 日志系统重构
+## 🛠️ 智能体工具库 (Agent Tools Ecosystem)
 
-所有环境统一使用 text 格式，消除本地与线上的行为差异：
+### 1. 静态 Tool 矩阵
+- **`send_email_notification`**：通过 163 网易邮箱 SMTP SSL 异步发送科技风 HTML 富文本邮件，支持多收件人与指数退避重试；
+- **`analyze_image`**：多模态图像视觉分析（发票、票据、图表等拍照识别）；
+- **`calculator`**：高精度数学表达式安全计算；
+- **`duckduckgo_results_json`**：实时互联网网页与新闻搜索；
+- **`scrape_webpage`**：高效抓取目标 URL 网页正文 Markdown；
+- **`execute_python_code`**：隔离沙箱内执行 Python 数据处理与精准爬虫；
+- **`read_workspace_file` / `write_workspace_file`**：工作区文档与数据安全读写。
 
-- **本地终端**：自动着色（INFO 绿 / WARNING 黄 / ERROR 红）
-- **Docker / K8s 容器**：`isatty()=False` 自动关闭颜色，输出纯文本
-- 运维可按固定格式拆分字段
-
-**日志行格式：**
-```
-2026-05-13 10:30:45.123 - [production] - INFO     - [6e932b38] - [chatbot.chat:138] - 收到聊天请求  {"session_id": "sess_abc", "user_id": "42", "message_count": 3}
-```
-
----
-
-### 4. 限流策略改为按用户 ID
-
-**原项目：** 按客户端 IP 限流，同一出口 IP 下的所有用户共享配额，公司/学校内网多人使用时会互相消耗。
-
-**本项目：** 改为按登录用户 ID 限流，每个用户拥有独立配额，互不干扰。
-
-| | 原项目 | 本项目 |
-|---|---|---|
-| 限流维度 | 客户端 IP | 登录用户 ID |
-| 未登录请求 | 按 IP 限流 | 降级为 IP 限流兜底 |
-| 多人共用 IP | 共享配额，互相影响 | 各自独立，互不干扰 |
-
-如需切换回按 IP 限流，修改 `app/core/limiter.py` 中的 `key_func` 即可：
-
-```python
-key_func=get_user_id,           # 按用户 ID 限流（当前）
-# key_func=get_remote_address,  # 按 IP 限流（切换时取消注释，注释上一行）
-```
-
-#### slowapi 限流规则说明
-
-本项目使用 `app.state.limiter` 挂载方式（非 `SlowAPIMiddleware`），限流规则如下：
-
-| 场景 | 行为 |
-|---|---|
-| 接口上有 `@limiter.limit("X/minute")` | 按该接口自身配置限流，每个接口独立计数 |
-| 接口上没有 `@limiter.limit()` | **不做任何限流**，请求直接放行 |
-| `Limiter(default_limits=...)` | 在当前挂载方式下对无装饰器接口**不生效**，仅作配置留存 |
-
-> **注意**：若改用 `SlowAPIMiddleware` 中间件模式，`default_limits` 会对所有无装饰器的接口自动生效。
-> 当前选择 `app.state.limiter` 挂载是为了精确控制——只有主动声明限流的接口才受约束，避免对健康检查等内部接口误限。
-
-**当前各接口限额一览：**
-
-| 接口 | 限额 |
-|---|---|
-| `POST /chatbot/chat` | 30 次 / 分钟 |
-| `POST /chatbot/chat/stream` | 20 次 / 分钟 |
-| `GET/DELETE /chatbot/messages` | 50 次 / 分钟 |
-| `POST /auth/register` | 10 次 / 小时 |
-| `POST /auth/login` | 20 次 / 分钟 |
-| `GET /health` | 无限流 |
-| `GET /debug/rate-limit/ping`（压测专用） | 10 次 / 分钟 |
+### 2. 高德地图 MCP Tool 矩阵 (15+ 工具)
+- **`maps_weather`**：实时与未来天气预报查询；
+- **`maps_direction_driving` / `walking` / `transit` / `bicycling`**：驾车、步行、地铁公交、骑行全模式路线规划与路况评估；
+- **`maps_geocode` / `regeocode`**：地理编码与逆地理编码；
+- **`maps_search_around` / `search_text`**：周边 POI 检索与关键字位置查询。
 
 ---
 
-### 5. 限流错误响应优化
+## 🛡️ 安全与多租户文件沙箱架构
 
-**原项目：** 使用 slowapi 内置的 `_rate_limit_exceeded_handler`，存在两个问题：
-- 直接 `print` 到 stdout，绕过 structlog，日志格式与其他日志不一致，无法按用户追溯
-- 返回的错误信息为英文技术报错，对用户不友好
-
-**本项目：** 在 `app/main.py` 中注册自定义 handler 替换内置实现：
-
-```python
-async def _rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
-    # 通过 structlog 记录结构化日志，包含触发限流的用户/IP 和限额信息
-    logger.warning("请求频率超出限制", path=path, rate_limit_key=rate_limit_key, limit=limit_str)
-    # 返回友好的中文提示
-    return JSONResponse(status_code=429, content={"detail": "请求过于频繁，请稍后再试", ...})
+上传的文件采用严格的用户与会话物理隔离分层架构：
 ```
-
-| | 原项目 | 本项目 |
-|---|---|---|
-| 日志输出 | `print` 绕过 structlog | structlog `WARNING` 结构化日志 |
-| 日志包含限流 key | ❌ | ✅ `rate_limit_key: user:42` |
-| 客户端错误提示 | 英文技术信息 | 中文友好提示 |
-
-**触发限流时的日志示例：**
+storage/workspace/
+  └── users/
+      └── {user_id}/
+          └── {session_id}/
+              └── 20260810_143000_receipt.png
 ```
-WARNING - 请求频率超出限制  {"path": "/api/v1/chatbot/chat", "rate_limit_key": "user:1", "limit": "10 per 1 minute", "client_ip": "127.0.0.1"}
-```
+- **双重防路径穿越防护**：拦截文件名中包含 `..`、`/`、`\` 等非法字符，并在后端执行 `Path.resolve().relative_to(sandbox_dir)` 强制校验；
+- **前端隐私安全**：对话气泡呈现优雅图片卡片与灯箱放大预览，**完全对用户隐藏底层服务器文件绝对路径**。
 
-**触发限流时客户端收到的响应：**
-```json
-{
-  "detail": "请求过于频繁，请稍后再试",
-  "limit": "10 per 1 minute",
-  "hint": "如持续受限，请联系管理员"
-}
+---
+
+## 🧠 双层防污染长期记忆机制 (mem0ai)
+
+为防止临时计算、即时路况、瞬时天气等瞬态信息污染长期记忆库，设计了双层防御网：
+
+1. **第一层：代码级 Gatekeeper 守门人**（`app/services/memory.py`）
+   - 针对非陈述性句式、计算指令、查询类动词进行前置过滤；仅当包含第一人称明确偏好/身份信息（如“我喜欢”、“我住在”）时才放行。
+2. **第二层：第一性原理 3-Questions 抽取 Prompt**
+   - **主体相关性**：是否属于用户核心属性？
+   - **跨会话持久性**：未来会话是否具备复用价值？
+   - **时间不变性**：是否不受时间推移快速失效？
+
+---
+
+## 🎨 极客前端终端交互 (Three.js & Anime.js)
+
+访问内置测试台：`http://localhost:8000/test`
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Three.js 3D 实时量子智能中枢 (3D Quantum Core Reactor)   │
+│ ──► 线框二十面体 + 双重倾斜轨道环 + 220 颗星云粒子 3D 视差倾斜│
+├─────────────────────────────────────────────────────────────┤
+│ 2. Anime.js 全局点击能量粒子爆破 (Click Particle Burst)     │
+│ ──► 全屏任意点击产生 18 颗向四周辐射的霓虹流光光斑          │
+├─────────────────────────────────────────────────────────────┤
+│ 3. 页面与会话列表 Stagger & Spring 物理弹性动效             │
+│ ──► 会话项交错滑入、气泡弹性回弹、图片灯箱 Elastic 弹发展开 │
+├─────────────────────────────────────────────────────────────┤
+│ 4. 全屏微光星空流光 Canvas (Constellation Network)          │
+│ ──► 70 颗自发光微粒悬浮游动，鼠标移动产生引力互动           │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 6. 限流压测验证（JMeter）
-
-新增专用轻量压测接口 `GET /api/v1/debug/rate-limit/ping`（仅开发 / 测试环境可用），绕开 LangGraph session 锁，可真正并发触发 slowapi 计数。
-
-**为什么需要专用压测接口？**
-
-`/chatbot/chat` 接口底层由 LangGraph 的 `AsyncPostgresSaver` 对同一 `session_id` 加数据库行锁，导致并发请求在 DB 层串行化。每次 LLM 调用约需 10~15 秒，1 分钟内只能完成约 5~9 次请求，远低于 30 次 / 分钟的限额，slowapi 没有机会触发 429。
-
-**压测结果（JMeter，15 线程，Ramp-Up=0，瞬间并发）：**
-
-```
-限额：10次 / 分钟（按用户 ID）
-
-前 10 个请求 → 200 OK（约 16~29ms）
-后  5 个请求 → 429 Too Many Requests
-```
-
-日志中可清晰看到限流 key 和限额，便于运维排查：
-```
-INFO    - 限流压测 ping          {"rate_limit_key": "user:1"}   ×10
-WARNING - 请求频率超出限制       {"rate_limit_key": "user:1", "limit": "10 per 1 minute"}  ×5
-```
-
-如需查看当前限流计数，可调用配套调试接口：
-```
-GET /api/v1/debug/rate-limit/check?user_id=1
-GET /api/v1/debug/rate-limit/storage-info
-```
-
----
-
-### 7. 中文注释与本地化
-
-- 所有核心模块补充中文注释
-- 日志事件名统一使用中文，去除英文 key + 中文描述的双键冗余模式
-
----
-
-### 8. 本地完整链路验证
-
-完成以下组件的端到端测试：
-- PostgreSQL + pgvector 向量存储
-- mem0 长期记忆（search / add）
-- pg_jieba 中文分词
-- qwen-embedding 向量化
-- LangGraph 多轮对话 + 工具调用
-
----
-
-## 技术栈
-
-```
-FastAPI · LangGraph · LangChain · PostgreSQL · pgvector
-mem0ai · pg_jieba · SQLModel · structlog · Prometheus
-Grafana · Langfuse · slowapi · tenacity · Pydantic v2
-阿里云 DashScope（Qwen LLM + qwen-embedding）
-```
-
----
-
-## 快速启动
+## 🚀 快速启动
 
 ### 环境要求
-
 - Python 3.11+
-- PostgreSQL 15+（需安装 pgvector、pg_jieba 扩展）
-- uv
+- PostgreSQL 15+（需启用 `pgvector` 扩展）
+- [uv](https://github.com/astral-sh/uv) (推荐包管理器)
+- Docker & Docker Compose
 
-### 安装依赖
-
+### 1. 安装依赖
 ```bash
 uv sync
 ```
 
-### 配置环境变量
-
+### 2. 配置环境变量
 ```bash
 cp .env.example .env.development
-# 编辑 .env.development，填写数据库连接、DashScope API Key 等
+# 在 .env.development 中配置数据库连接、DashScope API Key、163 邮箱授权码等
 ```
 
-### 启动服务
+### 3. 启动服务
 
 ```bash
-# 本地开发
-make dev
-
-# Docker 启动（API + DB）
-make docker-run
-
-# 完整栈（API + Prometheus + Grafana）
+# 方式 A：Docker 完整栈启动（API + PostgreSQL + pgvector + Prometheus + Grafana）
 make docker-compose-up ENV=development
+
+# 方式 B：本地热加载启动
+make dev
 ```
 
-### 接口文档
-
-```
-http://127.0.0.1:8000/docs
-```
+### 4. 访问服务
+- **3D 极客 Agent 测试台**：[http://localhost:8000/test](http://localhost:8000/test)
+- **API Swagger 文档**：[http://localhost:8000/docs](http://localhost:8000/docs)
+- **Prometheus 监控指标**：[http://localhost:8000/metrics](http://localhost:8000/metrics)
+- **Grafana 监控看板**：[http://localhost:3000](http://localhost:3000)
 
 ---
 
-## 常用命令
+## 🛠️ 常用开发命令
 
 ```bash
-make install          # 安装依赖（uv sync）
-make dev              # 本地热加载启动（端口 8000）
+make install          # 安装所有依赖（uv sync）
+make dev              # 本地热重载启动（port 8000）
 make lint             # ruff 代码检查
-make format           # ruff 格式化
-make typecheck        # pyright 类型检查
-make check            # lint + typecheck
-make eval             # 运行 LLM 评测（交互式）
-make eval-quick       # 运行 LLM 评测（默认配置）
-make docker-run       # Docker 启动 API + DB
+make format           # ruff 自动代码格式化
+make typecheck        # pyright 严格类型检查 (0 errors)
+make check            # lint + typecheck 全量校验
+make eval-quick       # 运行 LLM 质量评测
 ```
 
 ---
 
-## 项目结构
+## 📂 项目结构
 
 ```
 app/
-  api/v1/            # 路由（auth.py · chatbot.py · api.py）
+  api/v1/            # 路由层（auth.py · chatbot.py · debug.py · api.py）
   core/
-    config.py        # Pydantic Settings 配置
-    langgraph/       # LangGraph Agent 图 + 工具
-    logging.py       # structlog 日志配置
-    middleware.py    # ASGI 中间件
-    metrics.py       # Prometheus 指标
-    limiter.py       # 限流（slowapi）
-    prompts/         # 系统提示词
-  models/            # SQLModel ORM 模型
-  schemas/           # Pydantic 请求/响应模型 + 图状态
-  services/          # 业务逻辑（database · memory · llm）
-  utils/             # 公共工具函数
+    config.py        # Pydantic Settings 配置驱动
+    langgraph/       # LangGraph Agent 图拓扑 + 工具库
+      tools/         # 工具实现（email_sender · mcp_client · calculator 等）
+    logging.py       # structlog 日志体系（智能静默高频探针）
+    middleware.py    # ASGI 耗时监控与上下文绑定中间件
+    metrics.py       # Prometheus 性能指标导出
+    limiter.py       # slowapi 细粒度用户限流
+    prompts/         # Agent 策略提示词
+  models/            # SQLModel ORM 数据库实体
+  schemas/           # Pydantic 校验模式与图状态
+  services/          # 核心服务（database · memory · llm）
+  static/            # 前端 3D 终端资源（index.html · anime.min.js）
 evals/               # LLM 评测框架（基于 Langfuse）
-scripts/             # 环境初始化、Docker 构建脚本
+storage/workspace/   # 用户与会话隔离沙箱存储
 ```
 
 ---
 
-## 文档目录
+## 📄 开源许可证与致谢
 
-| 文档 | 说明 |
-|---|---|
-| [快速开始](docs/getting-started.md) | 本地启动、注册、登录、聊天接口示例 |
-| [架构说明](docs/architecture.md) | 项目整体架构和请求链路 |
-| [鉴权说明](docs/authentication.md) | JWT、用户 token、会话归属校验 |
-| [数据库说明](docs/database.md) | 业务表、迁移、checkpoint 表说明 |
-| [长期记忆](docs/memory.md) | mem0、pgvector、长期记忆读写流程 |
-| [LLM 服务](docs/llm-service.md) | 模型注册、重试、fallback、结构化输出 |
-| [Docker](docs/docker.md) | Docker Compose 启动方式 |
-| [配置说明](docs/configuration.md) | `.env` 配置项和环境切换 |
-| [观测说明](docs/observability.md) | 日志、Prometheus、Grafana、Langfuse |
-| [评测说明](docs/evaluation.md) | LLM 输出评测框架 |
-
----
-
-## 致谢
-
-本项目基于 [wassim249/fastapi-langgraph-agent-production-ready-template](https://github.com/wassim249/fastapi-langgraph-agent-production-ready-template) 进行二次开发，感谢原作者的开源贡献。
+本项目基于 [wassim249/fastapi-langgraph-agent-production-ready-template](https://github.com/wassim249/fastapi-langgraph-agent-production-ready-template) 与 [Anime.js](https://animejs.com/) 进行深度二次研发，感谢开源社区的卓越贡献。
