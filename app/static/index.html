@@ -18,14 +18,28 @@
   <!-- Three.js (3D Quantum Core & Particle Mesh) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
-  <!-- Anime.js (Local Bundle + CDN Fallback) -->
-  <script src="/static/anime.min.js"></script>
+  <!-- Anime.js (CDN + Universal Compatibility Layer) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
   <script>
-    if (typeof anime === 'undefined') {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js';
-      document.head.appendChild(script);
-    }
+    // Universal anime() wrapper
+    window.runAnime = function(options) {
+      if (typeof anime === 'function') {
+        return anime(options);
+      }
+      if (typeof anime === 'object' && anime !== null) {
+        if (typeof anime.animate === 'function') {
+          const { targets, ...params } = options;
+          return anime.animate(targets, params);
+        }
+      }
+      return null;
+    };
+    window.getStagger = function(val) {
+      if (typeof anime !== 'undefined' && typeof anime.stagger === 'function') {
+        return anime.stagger(val);
+      }
+      return (el, i) => i * val;
+    };
   </script>
 
   <style>
@@ -1142,8 +1156,8 @@
           });
         }
 
-        if (typeof anime !== 'undefined') {
-          anime({
+        if (typeof runAnime === 'function') {
+          runAnime({
             targets: particles,
             x: (p) => p.targetX,
             y: (p) => p.targetY,
@@ -1178,8 +1192,8 @@
       autoResizeTextarea(textarea);
       textarea.focus();
 
-      if (typeof anime !== 'undefined') {
-        anime({
+      if (typeof runAnime === 'function') {
+        runAnime({
           targets: textarea,
           boxShadow: ['0 0 0 rgba(6, 182, 212, 0)', '0 0 22px rgba(6, 182, 212, 0.65)', '0 0 0 rgba(6, 182, 212, 0)'],
           duration: 800,
@@ -1190,27 +1204,32 @@
 
     // Page Entrance Anime Timeline
     function playPageEntrance() {
-      if (typeof anime === 'undefined') return;
-      anime.timeline({ easing: 'easeOutQuart' })
-        .add({
-          targets: '.header',
-          translateY: [-24, 0],
-          opacity: [0, 1],
-          duration: 650
-        })
-        .add({
-          targets: '.ui-panel',
-          translateX: [-25, 0],
-          opacity: [0, 1],
-          duration: 700,
-          delay: anime.stagger(100)
-        }, '-=400')
-        .add({
-          targets: '.chat-main',
-          scale: [0.98, 1],
-          opacity: [0, 1],
-          duration: 700
-        }, '-=550');
+      if (typeof anime === 'function' && typeof anime.timeline === 'function') {
+        anime.timeline({ easing: 'easeOutQuart' })
+          .add({
+            targets: '.header',
+            translateY: [-24, 0],
+            opacity: [0, 1],
+            duration: 650
+          })
+          .add({
+            targets: '.ui-panel',
+            translateX: [-25, 0],
+            opacity: [0, 1],
+            duration: 700,
+            delay: window.getStagger ? window.getStagger(100) : 100
+          }, '-=400')
+          .add({
+            targets: '.chat-main',
+            scale: [0.98, 1],
+            opacity: [0, 1],
+            duration: 700
+          }, '-=550');
+      } else if (typeof runAnime === 'function') {
+        runAnime({ targets: '.header', translateY: [-24, 0], opacity: [0, 1], duration: 650, easing: 'easeOutQuart' });
+        runAnime({ targets: '.ui-panel', translateX: [-25, 0], opacity: [0, 1], duration: 700, delay: 100, easing: 'easeOutQuart' });
+        runAnime({ targets: '.chat-main', scale: [0.98, 1], opacity: [0, 1], duration: 700, delay: 150, easing: 'easeOutQuart' });
+      }
     }
 
     // Init Marked.js & Highlight.js
@@ -1443,12 +1462,12 @@
         `).join('');
 
         // Anime.js Stagger animation for session items
-        if (typeof anime !== 'undefined') {
-          anime({
+        if (typeof runAnime === 'function') {
+          runAnime({
             targets: '.session-item',
             translateX: [-18, 0],
             opacity: [0, 1],
-            delay: anime.stagger(45),
+            delay: window.getStagger ? window.getStagger(45) : 45,
             duration: 500,
             easing: 'easeOutCubic'
           });
@@ -1521,12 +1540,12 @@
         scrollToBottom(true);
 
         // Anime.js Stagger for message history bubbles
-        if (typeof anime !== 'undefined') {
-          anime({
+        if (typeof runAnime === 'function') {
+          runAnime({
             targets: '.msg-bubble',
             translateY: [16, 0],
             opacity: [0, 1],
-            delay: anime.stagger(30),
+            delay: window.getStagger ? window.getStagger(30) : 30,
             duration: 550,
             easing: 'easeOutCubic'
           });
@@ -1982,8 +2001,8 @@
       modal.classList.add('active');
       document.body.style.overflow = 'hidden';
 
-      if (typeof anime !== 'undefined') {
-        anime({
+      if (typeof runAnime === 'function') {
+        runAnime({
           targets: '#modal-image',
           scale: [0.75, 1],
           opacity: [0, 1],
