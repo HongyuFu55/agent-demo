@@ -1,277 +1,206 @@
-# Agent Tools 开发学习路线图
+# Agent Tools 开发学习与生产级进阶路线图
 
-基于当前项目（FastAPI + LangGraph + MCP）的迭代学习路径，从简到难分为 4 个阶段。
-
----
-
-## 当前项目已有的工具
-
-| 工具 | 类型 | 说明 |
-|---|---|---|
-| `duckduckgo_results_json` | 静态 Tool | 网页搜索 |
-| `calculator` | 静态 Tool | 数学计算 |
-| `ask_human` | 静态 Tool | 人机交互中断 |
-| `maps_*` (15个) | MCP Tool | 高德地图全套 |
+基于当前项目（FastAPI + LangGraph + PostgreSQL + MCP）的实战迭代路径，对标工业界生产级（Production-Ready）Agent 架构标准，从简到难分为 5 个阶段。
 
 ---
 
-## 阶段一：静态 Tool 开发（入门）
+## 一、 当前项目已有能力与工具盘点
 
-> 难度：⭐  
-> 目标：掌握 LangChain `@tool` 装饰器的基本开发模式  
-> 对应文件：`app/core/langgraph/tools/`
+当前项目已实现完整的工程化底座与丰富的工具集：
 
-### 推荐练习项目
+| 分类 | 工具/能力名称 | 状态 | 对应实现文件 | 功能说明 |
+|---|---|:---:|---|---|
+| **搜索与计算** | `duckduckgo_search` / `calculator` | ✅ 已实现 | [duckduckgo_search.py](file:///d:/Learn/fastapi-langgraph-agent-zh-master/app/core/langgraph/tools/duckduckgo_search.py) | 网络实时搜索与安全数学计算 |
+| **人机协同 (HITL)** | `ask_human` | ✅ 已实现 | [ask_human.py](file:///d:/Learn/fastapi-langgraph-agent-zh-master/app/core/langgraph/tools/ask_human.py) | 中断图流程等待人类输入，确认高危操作 |
+| **位置与天气** | `get_weather_now`, `search_location_id` | ✅ 已实现 | [qweather.py](file:///d:/Learn/fastapi-langgraph-agent-zh-master/app/core/langgraph/tools/qweather.py) | 和风天气 REST API 实时查询 |
+| **文件与工作区** | `list_workspace_files`, `read_workspace_file`, `write_workspace_file` | ✅ 已实现 | [file_ops.py](file:///d:/Learn/fastapi-langgraph-agent-zh-master/app/core/langgraph/tools/file_ops.py) | 沙箱文件读写（带路径穿越白名单防护） |
+| **代码沙箱** | `execute_python_code` | ✅ 已实现 | [code_interpreter.py](file:///d:/Learn/fastapi-langgraph-agent-zh-master/app/core/langgraph/tools/code_interpreter.py) | 独立子进程 Python 执行沙箱（超时防爆） |
+| **数据库/SQL** | `query_session_history`, `query_user_sessions`, `execute_sql_query` | ✅ 已实现 | [db_query.py](file:///d:/Learn/fastapi-langgraph-agent-zh-master/app/core/langgraph/tools/db_query.py) | Text-to-SQL 只读安全查询与历史检索 |
+| **Web-RAG 抓取** | `scrape_webpage` | ✅ 已实现 | [web_scraper.py](file:///d:/Learn/fastapi-langgraph-agent-zh-master/app/core/langgraph/tools/web_scraper.py) | DOM 净化、Markdown 结构化、大纲生成与工作区直存 |
+| **多模态视觉** | `analyze_image` | ✅ 已实现 | [image_analyzer.py](file:///d:/Learn/fastapi-langgraph-agent-zh-master/app/core/langgraph/tools/image_analyzer.py) | 本地 Ollama / 视觉模型图像识别与分析 |
+| **外部通信** | `send_email_notification` | ✅ 已实现 | [email_sender.py](file:///d:/Learn/fastapi-langgraph-agent-zh-master/app/core/langgraph/tools/email_sender.py) | 163 邮箱 SMTP 异步邮件通知 |
+| **MCP 工具消费** | 高德地图全套 (`maps_*` 15+ 个) | ✅ 已实现 | [mcp_client.py](file:///d:/Learn/fastapi-langgraph-agent-zh-master/app/core/langgraph/tools/mcp_client.py) | 远程 Streamable-HTTP MCP 动态工具加载与降级 |
+| **语义记忆存储** | `mem0ai` + pgvector | ✅ 已实现 | [memory.py](file:///d:/Learn/fastapi-langgraph-agent-zh-master/app/services/memory.py) | 用户级长期语义记忆提取与持久化检索 |
+| **工作流持久化** | LangGraph `AsyncPostgresSaver` | ✅ 已实现 | [graph.py](file:///d:/Learn/fastapi-langgraph-agent-zh-master/app/core/langgraph/graph.py) | 生产级线程 Checkpoint 状态恢复与流式输出 |
 
-#### 1. 天气查询工具（接第三方 REST API）
+---
+
+## 阶段一：静态 Tool 开发与安全沙箱（基础已掌握 ✅）
+
+> **难度**：⭐  
+> **状态**：**100% 已实现**  
+> **核心目标**：掌握 LangChain `@tool` 装饰器、入参校验、异常重试与安全边界防护。
+
+### 关键掌握点
+1. **API 错误与重试**：统一使用 `tenacity` 库进行指数退避重试（`stop_after_attempt` + `wait_exponential`）。
+2. **安全边界与沙箱设计**：
+   - 文件操作：校验绝对路径必须锁定在 `storage/workspace/` 内部，拦截 `../` 路径穿越攻击。
+   - 数据库操作：只暴露只读 SELECT 权限，结合正则与 AST 拦截 DROP/DELETE/UPDATE/INSERT。
+   - 代码执行：设置 `EXEC_TIMEOUT_SECONDS`（如 30s）并捕获超时 SIGKILL，限制标准输出最大长度（如 4000 字符）。
+
+---
+
+## 阶段二：有状态工具与工具链工程（进阶进行中 🟡 85%）
+
+> **难度**：⭐⭐  
+> **状态**：**85% 已完成**  
+> **核心目标**：掌握多工具协同传递数据、多模态融合、副作用管理与高级 RAG。
+
+### 1. 网页内容深度抓取（Web-RAG）✅
+- **进阶特性**：不仅提取纯文本，还将 HTML 转换为标准 Markdown，保留多级标题（`# ~ ######`）、Markdown 表格与代码块，并自动提取文档大纲目录（TOC）。
+- **直存机制**：支持 `save_to_workspace_file` 参数，直接将数万字超长文本写入工作区文件，避免多次截断切片。
+
+### 2. 多模态 Vision 图像识别 ✅
+- 接收图片路径或 Base64 编码，调用多模态模型提取发票、图表、代码截图中的结构化数据。
+
+### 3. 工具副作用治理与人机协同（HITL）✅
+- 对于发送邮件、转账、删除数据等**不可逆副作用**操作，配合 `ask_human` 工具中断工作流，生成草稿并等待用户在前端确认后再执行。
+
+### 4. 企业级 RAG 知识库检索（待实战 🎯）
+*当前项目已实现 `mem0ai` 用户记忆，需进一步扩展企业级私有文档检索：*
 ```python
-# 使用和风天气或 OpenWeatherMap 免费 API
 @tool
-async def get_weather(city: str, days: int = 1) -> str:
-    """查询指定城市的天气预报。"""
-    # 调用 REST API → 解析 JSON → 返回结构化文字
+async def search_enterprise_kb(query: str, collection: str = "kb_docs", top_k: int = 5) -> str:
+    """在企业知识库中进行混合检索（关键词 + 语义向量）并重排序。"""
+    # 1. 密集向量检索 (Dense Retrieval - pgvector / Ollama bge-m3)
+    # 2. 稀疏全文检索 (Sparse Retrieval - PostgreSQL tsvector / BM25)
+    # 3. Reranker 模型二次打分重排 (BGE-Reranker)，剔除低分噪音
+    ...
 ```
 
-**学习点**：
-- 如何在工具里调用 HTTP API
-- 如何处理 API 错误和超时（`tenacity` 重试）
-- 工具的 `docstring` 就是 LLM 看到的 description，写好很重要
+**下一步攻坚点**：
+- [ ] 文档解析器（PDF / Word / Excel / Markdown）
+- [ ] 语义切分（Chunking）策略与元数据关联
+- [ ] 混合检索（Hybrid Search: BM25 + Vector）+ Rerank 过滤
 
 ---
 
-#### 2. 文件读写工具（操作本地/云存储）
-```python
-@tool
-async def read_file(path: str) -> str:
-    """读取指定路径的文件内容。"""
+## 阶段三：自建 MCP Server（高级待实践 🎯 40%）
 
-@tool
-async def write_file(path: str, content: str) -> str:
-    """将内容写入指定文件。"""
+> **难度**：⭐⭐⭐  
+> **目标**：从“消费外部 MCP”进化为“独立开发并发布私有 MCP Server”，实现工具跨项目共享与微服务解耦。
+
+### 架构示意
+```
+┌──────────────────────────────────────┐
+│       LangGraph Agent 主服务         │
+└──────────────────┬───────────────────┘
+                   │ Streamable-HTTP / SSE
+     ┌─────────────┼─────────────┐
+     ▼             ▼             ▼
+┌──────────┐ ┌───────────┐ ┌───────────────┐
+│ 高德地图 │ │ 内部 ERP  │ │ 自动化办公    │
+│ MCP (外部)│ │ MCP Server│ │ MCP (自建)    │
+└──────────┘ └───────────┘ └───────────────┘
 ```
 
-**学习点**：
-- 工具的安全边界设计（路径白名单）
-- 多工具协同（先 read → LLM 分析 → 再 write）
-
----
-
-#### 3. 数据库查询工具与 Text-to-SQL（结合项目 PostgreSQL ORM）
+### 自建 FastMCP Server 示例
 ```python
-@tool
-async def query_session_history(session_id: str, limit: int = 10) -> str:
-    """查询指定会话的历史问答记录。"""
-    # 复用项目里的 database_service
-
-@tool
-async def execute_sql_query(sql_query: str) -> str:
-    """在 PostgreSQL 数据库中安全执行只读 SELECT 查询（Text-to-SQL 核心工具）。"""
-    # 带 SQL 只读校验与安全拦截 (禁止 DROP/DELETE/UPDATE 等)
-```
-
-**学习点**：
-- 工具如何复用项目已有的 `database_service` 与 SQLModel ORM 模型
-- **Text-to-SQL 核心架构**：向 LLM 暴露数据库 Schema，让大模型自主撰写 SQL
-- **SQL 安全防护网**：只读防范、单条 SELECT 强制拦截与异常捕获
-- 结果序列化（ORM 对象 / SQL Result → 结构化 Markdown）
-
----
-
-#### 4. 代码执行工具（沙箱运行 Python）
-```python
-@tool
-async def execute_python(code: str) -> str:
-    """在安全的沙箱中执行 Python 代码并返回结果。"""
-    # 使用 subprocess 或 RestrictedPython
-```
-
-**学习点**：
-- 危险工具的安全设计（超时、内存限制）
-- 这是 Code Agent 的核心能力
-
----
-
-## 阶段二：有状态工具 + 工具链（进阶）
-
-> 难度：⭐⭐  
-> 目标：掌握工具之间的数据传递、多步骤工具链设计
-
-### 推荐练习项目
-
-#### 5. 网页内容抓取工具
-```python
-@tool
-async def scrape_webpage(url: str) -> str:
-    """抓取网页的主要文字内容。"""
-    # playwright 或 httpx + BeautifulSoup
-```
-
-**进阶组合**：`duckduckgo_search` → `scrape_webpage` → LLM 总结  
-这就是 RAG Agent 最基础的形态。
-
----
-
-#### 6. 图片分析工具（多模态）
-```python
-@tool
-async def analyze_image(image_url: str, question: str) -> str:
-    """分析图片内容并回答关于图片的问题。"""
-    # 调用 DeepSeek Vision 或 OpenAI GPT-4V
-```
-
-**学习点**：
-- 多模态工具如何传递图片（base64 / URL）
-- Vision LLM 的调用方式
-
----
-
-#### 7. 发送通知工具（邮件/企业微信/钉钉）
-```python
-@tool
-async def send_email(to: str, subject: str, body: str) -> str:
-    """发送电子邮件通知。"""
-
-@tool
-async def send_wechat_work(webhook: str, message: str) -> str:
-    """发送企业微信机器人消息。"""
-```
-
-**学习点**：
-- 工具的副作用管理（发送后不可撤回）
-- 配合 `ask_human` 工具：先让 LLM 生成草稿 → 用 `ask_human` 让用户确认 → 再发送
-
----
-
-#### 8. 知识库检索工具（RAG）
-```python
-@tool
-async def search_knowledge_base(query: str, top_k: int = 3) -> str:
-    """在企业知识库中检索相关文档。"""
-    # 使用项目已有的 pgvector + Ollama bge-m3 做向量检索
-```
-
-**学习点**：
-- 利用项目已有的 pgvector 构建知识库
-- 向量检索（embedding → 余弦相似度）
-- 这是 RAG Agent 的核心
-
----
-
-## 阶段三：自建 MCP Server（高级）
-
-> 难度：⭐⭐⭐  
-> 目标：不再只是消费 MCP，而是**自己发布一个 MCP Server**
-
-### 什么时候需要自建 MCP Server？
-
-- 你有私有的内部系统（ERP、CRM、内部数据库）
-- 你想把工具发布给多个 Agent 共享使用
-- 你想复用现有的 REST API，让它 MCP 化
-
-### 自建 MCP Server 示例
-
-```python
-# 使用官方 mcp 库搭建
+# mcp_servers/office_mcp.py
 from mcp.server.fastmcp import FastMCP
+import docx
 
-mcp = FastMCP("企业内部工具")
-
-@mcp.tool()
-async def query_erp_order(order_id: str) -> str:
-    """查询 ERP 系统中的订单状态。"""
-    # 调用内部 ERP API
-    return f"订单 {order_id} 状态：已发货"
+mcp = FastMCP("Office-Automation-MCP")
 
 @mcp.tool()
-async def get_employee_info(employee_id: str) -> str:
-    """查询员工信息。"""
-    # 查询 HR 数据库
+async def generate_docx_report(title: str, sections: list[dict], output_name: str) -> str:
+    """自动排版并生成企业级 Word 文档。"""
+    doc = docx.Document()
+    doc.add_heading(title, level=0)
+    for sec in sections:
+        doc.add_heading(sec["title"], level=1)
+        doc.add_paragraph(sec["content"])
+    doc.save(f"storage/workspace/{output_name}")
+    return f"Word 文档 '{output_name}' 生成成功！"
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    mcp.run(transport="streamable-http", host="0.0.0.0", port=8001)
 ```
 
-然后在项目的 `load_all_tools()` 里接入：
-
-```python
-# app/core/langgraph/tools/__init__.py
-mcp_servers = {
-    "amap": {"url": "https://mcp.amap.com/mcp?key=...", "transport": "streamable_http"},
-    "erp":  {"url": "http://your-erp-mcp-server:8080", "transport": "streamable_http"},  # 自建
-}
-```
-
-### 推荐自建练习
-
-| MCP Server | 说明 |
-|---|---|
-| 个人笔记 MCP | 封装 Notion / Obsidian API |
-| Git 操作 MCP | 查看仓库、创建 Issue、Review PR |
-| 数据分析 MCP | 上传 CSV → 自动用 pandas 分析 |
-| 日历 MCP | 接入 Google Calendar / 飞书日历 |
+**推荐自建练习**：
+- [ ] **企业数据分析 MCP**：上传 CSV/Excel $\to$ 自动化 Pandas 清洗 $\to$ 生成可视化图表。
+- [ ] **Git/DevOps MCP**：操作 GitHub/GitLab 仓库、创建 Issue、自动生成 PR Review 建议。
+- [ ] **个人知识库 MCP**：封装 Notion / Obsidian 笔记库双向同步。
 
 ---
 
-## 阶段四：Multi-Agent 系统（专家级）
+## 阶段四：Multi-Agent 多智能体系统（专家级架构 🎯 25%）
 
-> 难度：⭐⭐⭐⭐  
-> 目标：多个 Agent 协同完成复杂任务
+> **难度**：⭐⭐⭐⭐  
+> **目标**：解决单 Agent 处理复合任务时的步数超限、Token 爆炸与单点能力瓶颈。
 
-### 架构演进
+### 架构演进：从单 Agent 到 Supervisor 协作网络
 
 ```
-当前项目（单 Agent）:
-  用户 → LangGraph Agent → 工具池 → 返回
+【当前架构 (Single ReAct)】
+用户 ──► [ LangGraph 核心循环 (Chat ⇄ ToolCall) ] ──► 输出 (易受限步数上限)
 
-Multi-Agent（下一步）:
-  用户
-    └─► Orchestrator Agent（规划分解）
-          ├─► Search Agent    （专门搜索）
-          ├─► Code Agent      （专门写代码）
-          ├─► Data Agent      （专门分析数据）
-          └─► Report Agent    （专门生成报告）
+【进阶架构 (Supervisor / Hierarchical Agents)】
+                       ┌───────────────────────┐
+                       │   Supervisor Agent    │
+                       │   (意图理解/任务规划)   │
+                       └───────────┬───────────┘
+            ┌──────────────────────┼──────────────────────┐
+            ▼                      ▼                      ▼
+┌───────────────────────┐ ┌──────────────────────┐ ┌───────────────────────┐
+│   Researcher Agent    │ │     Coder Agent      │ │     Reporter Agent    │
+│ (专属搜索/抓取/清洗)   │ │ (专职代码/调试/执行) │ │ (专职格式化排版/发送) │
+└───────────────────────┘ └──────────────────────┘ └───────────────────────┘
 ```
 
-### 在项目中实现的方式
-
-1. **`call_subagent` 工具**：主 Agent 通过工具调用其他 Agent
-2. **LangGraph 多图编排**：在 `graph.py` 里定义多个子图，用 `Command` 路由
-3. **Supervisor 模式**：一个 LLM 负责分配任务给其他 LLM
+### 在当前项目中的演进实现方式
+1. **LangGraph Subgraphs（子图模块化）**：
+   - 将特定垂直领域的任务（如代码编写、文档生成）抽离为独立的 `CompiledStateGraph`。
+   - 每个子图拥有独立的 `recursion_limit` 和私有 State，执行完毕后仅把最终摘要返回给主图。
+2. **Supervisor 路由编排**：
+   - 主模型根据当前进度决定下一步转交给哪个专职子智能体，直到所有子任务全部完成。
 
 ---
 
-## 学习顺序建议
+## 阶段五：生产级工程治理与上线保障（顶尖企业标准）
+
+> **难度**：⭐⭐⭐⭐  
+> **目标**：保障 Agent 在高并发、复杂长链路、海量数据下的稳定性、低成本与安全性。
+
+### 1. 递归步数与熔断保护策略
+- 在 [config.py](file:///d:/Learn/fastapi-langgraph-agent-zh-master/app/core/config.py) 中合理配置 `LANGGRAPH_RECURSION_LIMIT`（当前已优化为 50）。
+- **死循环侦测**：当连续 3 次调用同名工具且入参完全相同时，主动中断并请求人类协助。
+
+### 2. 上下文预算管理（Context & Token Management）
+- **Tool Output Summarization**：当工具返回超过 10,000 字符时，在存入 State 前调用轻量级模型生成关键摘要。
+- **Token 窗口修剪**：集成 LangChain `trim_messages`，保留首轮 System Prompt + 最近 N 轮有效对话，防止超长会话导致 Token 费用激增或注意力衰减。
+
+### 3. 沙箱安全隔离进阶
+- 生产环境将 `execute_python_code` 迁移至轻量容器沙箱（如 Docker SDK、Firecracker 或 E2B 沙箱云），实现严格的 CPU、内存限制与只读网络隔离。
+
+### 4. LLM-Ops 持续评测与监控闭环
+- **指标大盘**：Prometheus + Grafana 持续监控 LLM TTFT（首 Token 延迟）、工具调用成功率、TP99 耗时。
+- **质量评测**：基于 `evals/` 框架，每日对线上真实 Trace 采样，进行幻觉率（Hallucination）与任务达成率（Helpfulness）自动化打分。
+
+---
+
+## 学习规划路线推荐（时间表）
 
 ```
-第1周: 完成阶段一练习 1-2（天气工具 + 文件工具）
-第2周: 完成阶段一练习 3-4（数据库工具 + 代码执行）
-第3周: 完成阶段二练习 5-6（爬虫 + 知识库检索）
-第4周: 自建第一个 MCP Server（接入内部系统）
-第5周+: 探索 Multi-Agent 架构
+[已完成] 阶段一：静态工具全部实战 + 沙箱安全 (天气/文件/SQL/代码)
+[已完成] 阶段二（上）：网页结构化抓取 + 视觉多模态 + 邮件 HITL
+-------------------------------------------------------------------------
+[当前计划 第 1 周]：阶段二（下）企业级混合检索 RAG（Hybrid Search + Reranker）
+[当前计划 第 2 周]：阶段三 使用 FastMCP 搭建第一个独立的私有 MCP 微服务
+[当前计划 第 3-4 周]：阶段四 LangGraph Subgraphs 与 Multi-Agent 协作架构设计
+[当前计划 第 5 周]：阶段五 上下文修剪压缩 (Token Management) 与沙箱隔离加固
 ```
 
 ---
 
-## 工具开发核查清单
+## 工具开发生产级核查清单 (Checklist)
 
-每开发一个新工具，确认以下几点：
+每开发一个新工具或 Agent 节点，确认以下指标：
 
-- [ ] `docstring` 清晰描述功能、参数含义（这是 LLM 理解工具的唯一途径）
-- [ ] 参数使用 Python 类型注解
-- [ ] 有错误处理（API 超时、返回空值等）
-- [ ] 返回值是人类可读的字符串（避免返回巨大 JSON）
-- [ ] 使用 `tenacity` 做重试
-- [ ] 在 `tools/__init__.py` 的 `static_tools` 或 `load_all_tools()` 里注册
-- [ ] 添加 `structlog` 日志（工具调用开始 / 结束 / 异常）
-
----
-
-## 推荐参考资源
-
-| 资源 | 链接 |
-|---|---|
-| LangChain Tool 开发文档 | https://python.langchain.com/docs/concepts/tools/ |
-| MCP 官方规范 | https://modelcontextprotocol.io/docs |
-| FastMCP（快速构建 MCP Server）| https://github.com/jlowin/fastmcp |
-| LangGraph 多 Agent 示例 | https://langchain-ai.github.io/langgraph/tutorials/multi_agent/ |
-| 公开 MCP Server 列表 | https://github.com/modelcontextprotocol/servers |
+- [ ] `docstring` 精准详细（这是 LLM 决策工具调用的唯一依据）。
+- [ ] 严格的入参类型标注与 Pydantic 校验。
+- [ ] 具备安全防御边界（路径白名单 / SQL 只读拦截 / 沙箱超时控制）。
+- [ ] 结果格式化为清晰的人类/LLM 可读 Markdown（避免直接倾倒海量 JSON）。
+- [ ] 统一使用 `tenacity` 做网络超时指数退避重试。
+- [ ] 注入 `structlog` 结构化日志（包含入参特征、耗时、状态码）。
+- [ ] 危险操作具备 HITL (`ask_human`) 中断确认能力。
