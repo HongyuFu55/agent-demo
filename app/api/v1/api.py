@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from app.api.v1.auth import router as auth_router
 from app.api.v1.chatbot import router as chatbot_router
 from app.api.v1.debug import router as debug_router
+from app.core.config import settings
 from app.core.logging import logger
 
 api_router = APIRouter()
@@ -27,4 +28,8 @@ async def health_check():
     返回：
         dict: 健康状态信息。
     """
-    return {"status": "healthy", "version": "1.0.0"}
+    return {
+        "status": "healthy",
+        "version": "1.0.0",
+        "environment": settings.ENVIRONMENT.value if hasattr(settings.ENVIRONMENT, "value") else str(settings.ENVIRONMENT),
+    }
