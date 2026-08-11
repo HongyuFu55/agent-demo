@@ -152,7 +152,8 @@ async def get_langchain_mcp_tools(
             "weather": {"url": "https://mcp.weather.com/mcp", "transport": "streamable_http"},
         })
     """
-    client = MultiServerMCPClient(servers or {})
+    from typing import cast
+    client = MultiServerMCPClient(cast(Any, servers or {}))
     tools = await client.get_tools()
     logger.info(
         "langchain_mcp_tools_loaded",

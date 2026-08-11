@@ -176,6 +176,15 @@ class Settings:
         self.LONG_TERM_MEMORY_EMBEDDER_MODEL = os.getenv("LONG_TERM_MEMORY_EMBEDDER_MODEL", "text-embedding-v4")
         self.LONG_TERM_MEMORY_EMBEDDING_DIMS = int(os.getenv("LONG_TERM_MEMORY_EMBEDDING_DIMS", "1024"))
         self.LONG_TERM_MEMORY_COLLECTION_NAME = os.getenv("LONG_TERM_MEMORY_COLLECTION_NAME", "longterm_memory")
+
+        # 163 邮箱 SMTP 配置
+        self.SMTP_163_SERVER = os.getenv("SMTP_163_SERVER", "smtp.163.com")
+        self.SMTP_163_PORT = int(os.getenv("SMTP_163_PORT", "465"))
+        self.SMTP_163_USE_SSL = os.getenv("SMTP_163_USE_SSL", "true").lower() in ("true", "1", "yes")
+        self.SMTP_163_USER = os.getenv("SMTP_163_USER", "")
+        self.SMTP_163_PASSWORD = os.getenv("SMTP_163_PASSWORD", "")
+        self.SMTP_163_DEFAULT_FROM_NAME = os.getenv("SMTP_163_DEFAULT_FROM_NAME", "FastAPI LangGraph AI 助手")
+
         # JWT 配置
         self.JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
         self.JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
