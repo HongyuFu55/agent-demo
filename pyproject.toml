@@ -56,6 +56,7 @@ dependencies = [
     "pymilvus>=2.4.0",
     "rank-bm25>=0.2.2",
     "jieba>=0.42.1",
+    "grpcio>=1.66.0,<=1.70.0",
 ]
 
 # 可选依赖。

@@ -21,7 +21,7 @@ class MilvusService:
         self._client = None
 
     def _get_client(self):
-        """延迟懒加载 MilvusClient 实例."""
+        """延迟懒加载 MilvusClient 实例，带多环境候选 URI 自动探测."""
         if self._client is None:
             try:
                 from pymilvus import MilvusClient
@@ -29,10 +29,36 @@ class MilvusService:
                 logger.exception("pymilvus 未安装，请执行 pip install pymilvus")
                 raise RuntimeError("pymilvus 未安装，无法连接 Milvus 向量数据库")
 
-            kwargs: dict[str, Any] = {"uri": settings.milvus_uri}
-            if settings.MILVUS_TOKEN:
-                kwargs["token"] = settings.MILVUS_TOKEN
-            self._client = MilvusClient(**kwargs)
+            candidates = [
+                settings.milvus_uri,
+                "http://milvus-standalone:19530",
+                "http://host.docker.internal:19530",
+                "http://localhost:19530",
+                "http://127.0.0.1:19530",
+            ]
+            # 去重且保持顺序
+            seen = set()
+            unique_candidates = [c for c in candidates if not (c in seen or seen.add(c))]
+
+            client = None
+            last_err = None
+            for uri in unique_candidates:
+                try:
+                    kwargs: dict[str, Any] = {"uri": uri}
+                    if settings.MILVUS_TOKEN:
+                        kwargs["token"] = settings.MILVUS_TOKEN
+                    client = MilvusClient(**kwargs)
+                    logger.info("MilvusClient 连接成功", uri=uri)
+                    break
+                except Exception as e:
+                    last_err = e
+                    logger.debug("尝试连接 Milvus 节点失败，尝试下一个候选节点", uri=uri, error=str(e))
+
+            if client is None:
+                logger.exception("无法连接至任何 Milvus 候选地址", error=str(last_err))
+                raise RuntimeError(f"无法连接至 Milvus: {str(last_err)}")
+
+            self._client = client
             self._ensure_collection()
         return self._client
 
@@ -64,7 +90,8 @@ class MilvusService:
         client = self._get_client()
         logger.info("向 Milvus 写入切片数据", collection=self.collection_name, count=len(chunks))
         res = client.insert(collection_name=self.collection_name, data=chunks)
-        client.flush(self.collection_name)
+        if hasattr(client, "flush"):
+            getattr(client, "flush")(self.collection_name)
         insert_count = res.get("insert_count", len(chunks))
         logger.info("Milvus 切片写入成功", insert_count=insert_count)
         return insert_count
