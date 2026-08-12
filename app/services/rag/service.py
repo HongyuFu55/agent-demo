@@ -4,6 +4,17 @@ import uuid
 from pathlib import Path
 from typing import Any
 import structlog
+
+try:
+    import docx
+except ImportError:
+    docx = None
+
+try:
+    import pypdf
+except ImportError:
+    pypdf = None
+
 from app.services.rag.text_splitter import RecursiveTextSplitter
 from app.services.rag.embedding_service import embedding_service
 from app.services.rag.milvus_service import milvus_service
@@ -92,18 +103,36 @@ class RAGService:
 
         if p.suffix.lower() in [".txt", ".md", ".json", ".csv"]:
             content = p.read_text(encoding="utf-8", errors="ignore")
-        elif p.suffix.lower() == ".docx":
+        elif p.suffix.lower() == ".pdf":
+            if pypdf is None:
+                raise RuntimeError("pypdf 未安装，无法解析 PDF 文件，请执行 pip install pypdf")
             try:
-                import docx
-
+                reader = pypdf.PdfReader(str(p))
+                extracted: list[str] = []
+                for i, page in enumerate(reader.pages):
+                    page_text = page.extract_text() or ""
+                    if page_text.strip():
+                        extracted.append(f"<!-- Page {i + 1} -->\n{page_text.strip()}")
+                content = "\n\n".join(extracted)
+                logger.info("PDF 文件解析完成", filename=actual_name, total_pages=len(reader.pages), chars=len(content))
+            except Exception as e:
+                logger.exception("解析 PDF 文件失败", file_path=str(p), error=str(e))
+                raise ValueError(f"无法解析 PDF 文件: {e}")
+        elif p.suffix.lower() == ".docx":
+            if docx is None:
+                raise RuntimeError("python-docx 未安装，无法解析 DOCX 文件，请执行 pip install python-docx")
+            try:
                 doc = docx.Document(str(p))
                 content = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
             except Exception as e:
-                logger.exception("解析 DOCX 文件失败", file_path=str(p))
+                logger.exception("解析 DOCX 文件失败", file_path=str(p), error=str(e))
                 raise ValueError(f"无法解析 DOCX 文件: {e}")
         else:
             # 其它文件默认尝试文本读取
             content = p.read_text(encoding="utf-8", errors="ignore")
+
+        if not content.strip():
+            raise ValueError(f"文档 [{actual_name}] 解析后未提取到有效文本内容，请确认文件是否为空或为扫描件图片")
 
         return await self.ingest_text(
             text=content,
