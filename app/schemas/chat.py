@@ -10,9 +10,13 @@ from pydantic import (
     BaseModel,
     Field,
     field_validator,
+    model_validator,
 )
 
 from app.schemas.base import BaseResponse
+
+# user/assistant 消息的最大字符数，system 消息不受此限制
+_USER_MSG_MAX_LEN = 10_000
 
 
 class Message(BaseModel):
@@ -26,7 +30,7 @@ class Message(BaseModel):
     model_config = {"extra": "ignore"}
 
     role: Literal["user", "assistant", "system"] = Field(..., description="消息发送方角色")
-    content: str = Field(..., description="消息内容", min_length=1, max_length=3000)
+    content: str = Field(..., description="消息内容", min_length=1)
 
     @field_validator("content")
     @classmethod
@@ -51,6 +55,15 @@ class Message(BaseModel):
             raise ValueError("Content contains null bytes")
 
         return v
+
+    @model_validator(mode="after")
+    def validate_content_length_by_role(self) -> "Message":
+        """仅对 user/assistant 消息限制内容长度，system 消息不受限."""
+        if self.role in ("user", "assistant") and len(self.content) > _USER_MSG_MAX_LEN:
+            raise ValueError(
+                f"消息内容过长（最多 {_USER_MSG_MAX_LEN} 字符，当前 {len(self.content)} 字符）"
+            )
+        return self
 
 
 class ChatRequest(BaseModel):
