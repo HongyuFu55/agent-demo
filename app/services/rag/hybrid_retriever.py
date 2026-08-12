@@ -1,9 +1,10 @@
-"""多路混合检索器：融合 Milvus 密集向量与 BM25 稀疏关键词，经加权 RRF 算法重排序."""
+"""多路混合检索器：融合 Milvus 密集向量与 BM25 稀疏关键词，经加权 RRF 算法重排序，可选 Reranker 精排."""
 
 from typing import Any
 import structlog
 from app.services.rag.milvus_service import milvus_service
 from app.services.rag.embedding_service import embedding_service
+from app.services.rag.reranker_service import reranker_service
 
 logger = structlog.get_logger(__name__)
 
@@ -90,13 +91,20 @@ bm25_index = InMemoryBM25Index()
 
 
 class HybridRetriever:
-    """企业级双路混合检索与 RRF 融合引擎."""
+    """企业级双路混合检索 + RRF 融合 + Reranker 精排引擎."""
 
-    def __init__(self, rrf_k: int = 60, dense_weight: float = 0.7, sparse_weight: float = 0.3):
+    def __init__(
+        self,
+        rrf_k: int = 60,
+        dense_weight: float = 0.7,
+        sparse_weight: float = 0.3,
+        use_reranker: bool = True,
+    ):
         """初始化混合检索参数与权重分配."""
         self.rrf_k = rrf_k
         self.dense_weight = dense_weight
         self.sparse_weight = sparse_weight
+        self.use_reranker = use_reranker
 
     async def search(
         self,
@@ -104,7 +112,7 @@ class HybridRetriever:
         top_k: int = 5,
         doc_filter: str | None = None,
     ) -> list[dict[str, Any]]:
-        """执行向量与关键词混合检索，并使用加权 RRF 算法合并排序."""
+        """执行向量与关键词混合检索，加权 RRF 合并后可选 Reranker 精排."""
         logger.info("发起双路混合检索", query=query, top_k=top_k)
 
         # 1. 密集向量检索 (Dense Retrieval)
@@ -134,22 +142,35 @@ class HybridRetriever:
                 item_map[key] = hit
             merged_scores[key] = merged_scores.get(key, 0.0) + (self.sparse_weight / (self.rrf_k + rank))
 
-        # 按 RRF 融合得分降序排序
-        sorted_keys = sorted(merged_scores.keys(), key=lambda k: merged_scores[k], reverse=True)[:top_k]
+        # 按 RRF 融合得分降序排序，多保留候选供 Reranker 精排
+        rrf_pool_size = top_k * 3 if self.use_reranker else top_k
+        sorted_keys = sorted(merged_scores.keys(), key=lambda k: merged_scores[k], reverse=True)[:rrf_pool_size]
 
-        final_results = []
+        rrf_results: list[dict[str, Any]] = []
         for rank, key in enumerate(sorted_keys, start=1):
             res = item_map[key]
             res["rrf_score"] = merged_scores[key]
             res["rrf_rank"] = rank
-            final_results.append(res)
+            rrf_results.append(res)
 
         logger.info(
             "混合检索与 RRF 融合完成",
             dense_candidates=len(dense_hits),
             sparse_candidates=len(sparse_hits),
-            final_count=len(final_results),
+            rrf_pool=len(rrf_results),
         )
+
+        # 4. Reranker 精排（可选，Ollama bge-reranker-v2-m3）
+        if self.use_reranker and rrf_results:
+            final_results = await reranker_service.rerank(
+                query=query,
+                candidates=rrf_results,
+                top_k=top_k,
+            )
+        else:
+            final_results = rrf_results[:top_k]
+
+        logger.info("检索完成", final_count=len(final_results))
         return final_results
 
 

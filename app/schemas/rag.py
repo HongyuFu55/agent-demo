@@ -45,6 +45,7 @@ class RAGSearchResult(BaseModel):
     score: float | None = Field(default=None, description="原始检索得分")
     rrf_score: float | None = Field(default=None, description="加权 RRF 融合得分")
     rrf_rank: int | None = Field(default=None, description="融合排序名次")
+    rerank_score: float | None = Field(default=None, description="Reranker 精排得分（0~1，越高越相关）")
 
 
 class RAGQueryResponse(BaseModel):
