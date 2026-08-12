@@ -218,7 +218,9 @@ class Settings:
         self.CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "60"))
 
         # Milvus 向量数据库与 RAG 知识库配置
-        self.MILVUS_HOST = os.getenv("MILVUS_HOST", "localhost")
+        is_in_docker = Path("/.dockerenv").exists() or os.getenv("POSTGRES_HOST") == "db"
+        default_milvus_host = "milvus-standalone" if is_in_docker else "localhost"
+        self.MILVUS_HOST = os.getenv("MILVUS_HOST") or default_milvus_host
         self.MILVUS_PORT = int(os.getenv("MILVUS_PORT", "19530"))
         self.MILVUS_URL = os.getenv("MILVUS_URL", "")
         self.MILVUS_TOKEN = os.getenv("MILVUS_TOKEN", "")

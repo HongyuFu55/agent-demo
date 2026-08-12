@@ -1,10 +1,21 @@
 """Milvus 向量数据库底层操作封装，支持 HNSW 索引与标量过滤."""
 
+import socket
 from typing import Any
+from urllib.parse import urlparse
 import structlog
 from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
+
+
+def _is_host_reachable(host: str, port: int, timeout: float = 0.5) -> bool:
+    """快速探测主机端口 TCP 连通性，避免 PyMilvus 注册不可达通道导致全局污染."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
 
 
 class MilvusService:
@@ -40,25 +51,22 @@ class MilvusService:
             seen = set()
             unique_candidates = [c for c in candidates if not (c in seen or seen.add(c))]
 
-            client = None
-            last_err = None
+            # 先通过 TCP socket 探测出真正连通的 URI，避免 PyMilvus 尝试失败污染连接池
+            valid_uri = None
             for uri in unique_candidates:
-                try:
-                    kwargs: dict[str, Any] = {"uri": uri}
-                    if settings.MILVUS_TOKEN:
-                        kwargs["token"] = settings.MILVUS_TOKEN
-                    client = MilvusClient(**kwargs)
-                    logger.info("MilvusClient 连接成功", uri=uri)
+                parsed = urlparse(uri)
+                host = parsed.hostname or "localhost"
+                port = parsed.port or 19530
+                if _is_host_reachable(host, port):
+                    valid_uri = uri
+                    logger.info("探测到可用的 Milvus 节点", uri=uri, host=host, port=port)
                     break
-                except Exception as e:
-                    last_err = e
-                    logger.debug("尝试连接 Milvus 节点失败，尝试下一个候选节点", uri=uri, error=str(e))
 
-            if client is None:
-                logger.exception("无法连接至任何 Milvus 候选地址", error=str(last_err))
-                raise RuntimeError(f"无法连接至 Milvus: {str(last_err)}")
-
-            self._client = client
+            target_uri = valid_uri or settings.milvus_uri
+            kwargs: dict[str, Any] = {"uri": target_uri}
+            if settings.MILVUS_TOKEN:
+                kwargs["token"] = settings.MILVUS_TOKEN
+            self._client = MilvusClient(**kwargs)
             self._ensure_collection()
         return self._client
 
