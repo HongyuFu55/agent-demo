@@ -31,9 +31,19 @@ class MilvusService:
         self.dimension = dimension or settings.RAG_EMBEDDING_DIMS
         self._client = None
 
-    def _get_client(self):
-        """延迟懒加载 MilvusClient 实例，带多环境候选 URI 自动探测."""
-        if self._client is None:
+    def _reset_client(self) -> None:
+        """重置 MilvusClient 实例，清理过期的 Collection 缓存."""
+        try:
+            if self._client is not None and hasattr(self._client, "close"):
+                self._client.close()
+        except Exception:
+            pass
+        self._client = None
+
+    def _get_client(self, force_refresh: bool = False):
+        """延迟懒加载 MilvusClient 实例，带多环境候选 URI 自动探测与强制刷新."""
+        if force_refresh or self._client is None:
+            self._reset_client()
             try:
                 from pymilvus import MilvusClient
             except ImportError:
@@ -70,39 +80,76 @@ class MilvusService:
             self._ensure_collection()
         return self._client
 
-    def _ensure_collection(self) -> None:
-        """检查并创建带 HNSW 索引的 Collection."""
-        client = self._client
+    def _ensure_collection(self, force_reconnect: bool = False) -> None:
+        """检查并创建带 HNSW 索引的 Collection，必要时刷新连接缓存."""
+        if force_reconnect:
+            self._reset_client()
+
+        client = self._client or self._get_client()
         if client is None:
             return
 
-        if not client.has_collection(self.collection_name):
-            logger.info("创建 Milvus 知识库 Collection", collection=self.collection_name, dim=self.dimension)
-            client.create_collection(
-                collection_name=self.collection_name,
-                dimension=self.dimension,
-                metric_type="COSINE",
-                consistency_level="Strong",
-                auto_id=True,
-            )
-            logger.info("Milvus 知识库 Collection 创建完毕", collection=self.collection_name)
+        try:
+            if not client.has_collection(self.collection_name):
+                logger.info("创建 Milvus 知识库 Collection", collection=self.collection_name, dim=self.dimension)
+                client.create_collection(
+                    collection_name=self.collection_name,
+                    dimension=self.dimension,
+                    metric_type="COSINE",
+                    consistency_level="Strong",
+                    auto_id=True,
+                )
+                logger.info("Milvus 知识库 Collection 创建完毕", collection=self.collection_name)
+        except Exception as e:
+            logger.warning("检查/创建 Milvus Collection 遇到异常，尝试重连并重新创建", error=str(e), collection=self.collection_name)
+            try:
+                self._reset_client()
+                client = self._get_client()
+                if not client.has_collection(self.collection_name):
+                    client.create_collection(
+                        collection_name=self.collection_name,
+                        dimension=self.dimension,
+                        metric_type="COSINE",
+                        consistency_level="Strong",
+                        auto_id=True,
+                    )
+            except Exception as inner_e:
+                logger.exception("二次创建 Milvus Collection 失败", error=str(inner_e))
 
-    async def insert_chunks(self, chunks: list[dict[str, Any]]) -> int:
-        """向 Milvus 批量插入文档切片与向量.
+    async def insert_chunks(self, chunks: list[dict[str, Any]], batch_size: int = 100) -> int:
+        """向 Milvus 批量分批插入文档切片与向量，支持大文档分批写入与自动保活.
 
         chunks 列表中每个元素格式必须包含: vector, chunk_text, doc_id, doc_name, chunk_index
         """
         if not chunks:
             return 0
 
+        self._ensure_collection()
         client = self._get_client()
-        logger.info("向 Milvus 写入切片数据", collection=self.collection_name, count=len(chunks))
-        res = client.insert(collection_name=self.collection_name, data=chunks)
+
+        logger.info("向 Milvus 写入切片数据", collection=self.collection_name, count=len(chunks), batch_size=batch_size)
+        total_inserted = 0
+
+        # 分批次写入，防止超大文档（如 PDF 1000+ 切片）触发 gRPC 消息过大或超时
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i : i + batch_size]
+            try:
+                res = client.insert(collection_name=self.collection_name, data=batch)
+                batch_count = res.get("insert_count", len(batch)) if isinstance(res, dict) else len(batch)
+                total_inserted += batch_count
+            except Exception as e:
+                logger.warning("Milvus 批量写入出现异常，强制重连重刷 Collection 缓存后重试", error=str(e), batch_index=i)
+                self._ensure_collection(force_reconnect=True)
+                client = self._get_client()
+                res = client.insert(collection_name=self.collection_name, data=batch)
+                batch_count = res.get("insert_count", len(batch)) if isinstance(res, dict) else len(batch)
+                total_inserted += batch_count
+
         if hasattr(client, "flush"):
             getattr(client, "flush")(self.collection_name)
-        insert_count = res.get("insert_count", len(chunks))
-        logger.info("Milvus 切片写入成功", insert_count=insert_count)
-        return insert_count
+
+        logger.info("Milvus 切片写入成功", total_inserted=total_inserted)
+        return total_inserted
 
     async def vector_search(
         self,
@@ -111,6 +158,7 @@ class MilvusService:
         doc_filter: str | None = None,
     ) -> list[dict[str, Any]]:
         """执行带标量过滤的向量余弦近邻检索."""
+        self._ensure_collection()
         client = self._get_client()
 
         filter_expr = ""
@@ -123,14 +171,31 @@ class MilvusService:
         }
 
         logger.debug("发起 Milvus 向量检索", collection=self.collection_name, top_k=top_k, filter=filter_expr)
-        results = client.search(
-            collection_name=self.collection_name,
-            data=[query_vector],
-            limit=top_k,
-            filter=filter_expr,
-            output_fields=["chunk_text", "doc_id", "doc_name", "chunk_index", "total_chunks"],
-            search_params=search_params,
-        )
+        results = None
+        try:
+            results = client.search(
+                collection_name=self.collection_name,
+                data=[query_vector],
+                limit=top_k,
+                filter=filter_expr,
+                output_fields=["chunk_text", "doc_id", "doc_name", "chunk_index", "total_chunks"],
+                search_params=search_params,
+            )
+        except Exception as e:
+            logger.warning("Milvus 向量检索异常，尝试自动重建重连后重试", error=str(e))
+            self._ensure_collection(force_reconnect=True)
+            client = self._get_client()
+            try:
+                results = client.search(
+                    collection_name=self.collection_name,
+                    data=[query_vector],
+                    limit=top_k,
+                    filter=filter_expr,
+                    output_fields=["chunk_text", "doc_id", "doc_name", "chunk_index", "total_chunks"],
+                    search_params=search_params,
+                )
+            except Exception:
+                return []
 
         hits: list[dict[str, Any]] = []
         if results and len(results) > 0:
@@ -154,22 +219,52 @@ class MilvusService:
 
     async def delete_by_doc_id(self, doc_id: str) -> int:
         """根据文档 ID 删除指定文档的所有切片."""
+        self._ensure_collection()
         client = self._get_client()
         filter_expr = f"doc_id == '{doc_id}'"
-        res = client.delete(collection_name=self.collection_name, filter=filter_expr)
-        deleted_count = res.get("delete_count", 0) if isinstance(res, dict) else 1
-        logger.info("已删除文档切片", doc_id=doc_id, count=deleted_count)
-        return deleted_count
+        try:
+            res = client.delete(collection_name=self.collection_name, filter=filter_expr)
+            deleted_count = res.get("delete_count", 0) if isinstance(res, dict) else 1
+            logger.info("已删除文档切片", doc_id=doc_id, count=deleted_count)
+            return deleted_count
+        except Exception as e:
+            logger.warning("删除文档切片异常，尝试重连重试", error=str(e), doc_id=doc_id)
+            self._ensure_collection(force_reconnect=True)
+            client = self._get_client()
+            try:
+                res = client.delete(collection_name=self.collection_name, filter=filter_expr)
+                return res.get("delete_count", 0) if isinstance(res, dict) else 1
+            except Exception:
+                return 0
 
     async def get_collection_stats(self) -> dict[str, Any]:
         """获取当前知识库的统计信息."""
+        self._ensure_collection()
         client = self._get_client()
-        stats = client.get_collection_stats(collection_name=self.collection_name)
-        return {
-            "collection_name": self.collection_name,
-            "dimension": self.dimension,
-            "row_count": stats.get("row_count", 0),
-        }
+        try:
+            stats = client.get_collection_stats(collection_name=self.collection_name)
+            return {
+                "collection_name": self.collection_name,
+                "dimension": self.dimension,
+                "row_count": stats.get("row_count", 0),
+            }
+        except Exception as e:
+            logger.warning("获取集合统计信息异常，尝试重连刷新", error=str(e))
+            self._ensure_collection(force_reconnect=True)
+            client = self._get_client()
+            try:
+                stats = client.get_collection_stats(collection_name=self.collection_name)
+                return {
+                    "collection_name": self.collection_name,
+                    "dimension": self.dimension,
+                    "row_count": stats.get("row_count", 0),
+                }
+            except Exception:
+                return {
+                    "collection_name": self.collection_name,
+                    "dimension": self.dimension,
+                    "row_count": 0,
+                }
 
 
 # 全局单例
