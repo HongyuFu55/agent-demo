@@ -641,6 +641,39 @@
       color: var(--text-main);
     }
 
+    /* RAG Chips & Dropzone Styling */
+    .rag-chip {
+      background: rgba(99, 102, 241, 0.12);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      padding: 0.2rem 0.55rem;
+      border-radius: 99px;
+      font-size: 0.7rem;
+      color: var(--text-main);
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .rag-chip:hover {
+      background: rgba(99, 102, 241, 0.35);
+      border-color: var(--accent-primary);
+      transform: translateY(-1px);
+    }
+    .rag-dropzone:hover {
+      border-color: var(--accent-primary) !important;
+      background: rgba(99, 102, 241, 0.1) !important;
+    }
+    .rag-hit-item {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius-sm);
+      padding: 0.5rem;
+      margin-bottom: 0.4rem;
+      font-size: 0.72rem;
+      transition: border-color 0.2s;
+    }
+    .rag-hit-item:hover {
+      border-color: var(--accent-cyan);
+    }
+
     /* 3D Quantum Core & Quick Prompt Chips */
     .welcome-3d-wrapper {
       display: flex;
@@ -854,12 +887,98 @@
       </div>
     </main>
 
-    <!-- Right Panel: Debug & Rate Limit -->
+    <!-- Right Panel: RAG Knowledge Base & Diagnostic Tabs -->
     <aside class="right-panel ui-panel">
-      <div class="panel-header">
-        ⚡ 接口诊断 & 限流压测
+      <div class="tabs">
+        <div class="tab active" id="tab-btn-rag" onclick="switchRightTab('rag')">📚 知识库 (RAG)</div>
+        <div class="tab" id="tab-btn-debug" onclick="switchRightTab('debug')">⚡ 接口诊断</div>
       </div>
-      <div class="panel-body">
+
+      <!-- RAG Knowledge Base Tab Content (Default Active) -->
+      <div class="panel-body" id="tab-content-rag">
+        
+        <!-- 1. Milvus & Knowledge Base Status -->
+        <div class="rag-status-card" style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: var(--radius-sm); padding: 0.75rem; margin-bottom: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.4rem; font-weight: 600; font-size: 0.85rem;">
+              <span class="badge-dot online" style="width: 8px; height: 8px;"></span>
+              <span>Milvus 向量引擎</span>
+            </div>
+            <div style="display: flex; gap: 0.4rem;">
+              <button class="btn" onclick="fetchRAGStats()" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;" title="刷新统计">🔄 刷新</button>
+              <a href="http://localhost:8001" target="_blank" class="btn" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; text-decoration: none; color: var(--accent-cyan);" title="打开 Attu 可视化面板">Attu ↗</a>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; font-size: 0.75rem;">
+            <div style="color: var(--text-muted);">集合: <span id="rag-stat-col" style="color: var(--text-main); font-weight: 600;">rag_knowledge_base</span></div>
+            <div style="color: var(--text-muted);">维度: <span id="rag-stat-dim" style="color: var(--text-main); font-weight: 600;">1024 维</span></div>
+            <div style="color: var(--text-muted); grid-column: span 2;">已存切片总数: <span id="rag-stat-rows" style="color: var(--accent-green); font-weight: 700; font-size: 0.85rem;">加载中...</span></div>
+          </div>
+        </div>
+
+        <!-- 2. Upload Document & Ingest to RAG -->
+        <div style="margin-bottom: 1.2rem;">
+          <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.3rem;">
+            <span>1. 上传文档录入知识库</span>
+            <span style="font-size: 0.7rem; color: var(--accent-primary); font-weight: normal;">(自动分块+向量化)</span>
+          </div>
+          
+          <div class="rag-dropzone" id="rag-dropzone" onclick="document.getElementById('rag-file-input').click()" style="border: 2px dashed rgba(99, 102, 241, 0.4); border-radius: var(--radius-sm); padding: 1rem 0.8rem; text-align: center; cursor: pointer; transition: all 0.2s; background: rgba(0,0,0,0.15);">
+            <input type="file" id="rag-file-input" style="display: none;" onchange="handleRAGFileChosen(event)" accept=".md,.txt,.docx,.pdf,.json" />
+            <div style="font-size: 1.5rem; margin-bottom: 0.3rem;">📄</div>
+            <div id="rag-file-label" style="font-size: 0.75rem; color: var(--text-main); font-weight: 500;">点击或拖拽上传文档</div>
+            <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 0.2rem;">支持 .md, .txt, .docx, .pdf, .json</div>
+          </div>
+
+          <div style="display: flex; gap: 0.4rem; margin-top: 0.5rem;">
+            <select id="rag-file-category" class="input-control" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; flex: 1;">
+              <option value="hr_policy">规章制度 (HR/考勤/报销)</option>
+              <option value="tech_docs">技术文档 (架构/API/运维)</option>
+              <option value="product_manual">产品手册 (操作/指南)</option>
+              <option value="faq">常见问题 (FAQ)</option>
+              <option value="general">通用知识 (General)</option>
+            </select>
+            <button class="btn btn-primary" id="btn-ingest-file" onclick="ingestRAGFile()" style="font-size: 0.75rem; padding: 0.35rem 0.8rem;">🚀 录入 Milvus</button>
+          </div>
+          <div id="rag-ingest-feedback" style="margin-top: 0.5rem; font-size: 0.75rem;"></div>
+        </div>
+
+        <!-- 3. Direct Text / Markdown Ingest -->
+        <div style="margin-bottom: 1.2rem;">
+          <details style="font-size: 0.8rem; background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); border-radius: var(--radius-sm); padding: 0.5rem;">
+            <summary style="font-weight: 600; cursor: pointer; color: var(--text-main); font-size: 0.8rem;">📝 快捷粘贴文本/制度录入</summary>
+            <div style="margin-top: 0.6rem;">
+              <input type="text" id="rag-text-title" class="input-control" placeholder="文档标题 (如: 智航科技年假制度.md)" style="font-size: 0.75rem; margin-bottom: 0.4rem;" />
+              <textarea id="rag-text-content" class="input-control" placeholder="在此粘贴制度、手册或 Markdown 文本内容..." style="height: 90px; font-size: 0.75rem; resize: vertical; margin-bottom: 0.4rem;"></textarea>
+              <button class="btn btn-primary" onclick="ingestRAGText()" style="width: 100%; font-size: 0.75rem; padding: 0.35rem 0.8rem;">录入此段文本到知识库</button>
+            </div>
+          </details>
+        </div>
+
+        <!-- 4. Grounding Hybrid Search Test -->
+        <div>
+          <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.4rem;">2. 知识库混合检索演练 (Dense + BM25)</div>
+          <div style="display: flex; gap: 0.4rem; margin-bottom: 0.5rem;">
+            <input type="text" id="rag-search-query" class="input-control" placeholder="输入测试问题 (如: 年假有几天)" style="flex: 1; font-size: 0.75rem;" onkeydown="if(event.key==='Enter') queryRAGTest()" />
+            <button class="btn btn-primary" onclick="queryRAGTest()" style="font-size: 0.75rem; padding: 0.35rem 0.8rem;">🔍 检索</button>
+          </div>
+          
+          <!-- Sample questions quick triggers -->
+          <div style="display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.6rem;">
+            <span class="rag-chip" onclick="askRAGSample('出差去一线城市每晚住宿最多报销多少？')">🏨 差旅住宿标准</span>
+            <span class="rag-chip" onclick="askRAGSample('连续工作满一年有多少天带薪年假？怎么申请？')">🏖️ 年假申请流程</span>
+            <span class="rag-chip" onclick="askRAGSample('公司的网络安全红线有哪些？')">🛡️ 安全红线</span>
+          </div>
+
+          <div id="rag-search-results" style="max-height: 260px; overflow-y: auto;">
+            <div style="color: var(--text-dim); font-size: 0.75rem; text-align: center; padding: 0.8rem;">点击上方快捷标签或输入问题测试召回...</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Debug & Rate Limit Tab Content -->
+      <div class="panel-body" id="tab-content-debug" style="display: none;">
         
         <!-- Rate Limit Ping Section -->
         <div style="margin-bottom: 1.5rem;">
@@ -1258,6 +1377,7 @@
         document.getElementById('jwt-token-display').value = currentToken;
         updateAuthUI(true, currentUserEmail);
         await fetchSessions();
+        fetchRAGStats();
       }
     });
 
@@ -1285,6 +1405,7 @@
           document.getElementById('jwt-token-display').value = currentToken;
           updateAuthUI(true, email);
           await fetchSessions();
+          fetchRAGStats();
         }
       } catch (err) {
         console.warn('Auto silent login skipped:', err);
@@ -1983,6 +2104,192 @@
       } catch (err) {
         box.innerText = `查询失败: ${err.message}`;
       }
+    }
+
+    // ==========================================
+    // RAG Knowledge Base Logic (Ingest, Query, Stats)
+    // ==========================================
+    let selectedRAGFile = null;
+
+    function switchRightTab(tabName) {
+      document.getElementById('tab-btn-rag').classList.toggle('active', tabName === 'rag');
+      document.getElementById('tab-btn-debug').classList.toggle('active', tabName === 'debug');
+      document.getElementById('tab-content-rag').style.display = tabName === 'rag' ? 'block' : 'none';
+      document.getElementById('tab-content-debug').style.display = tabName === 'debug' ? 'block' : 'none';
+      if (tabName === 'rag') {
+        fetchRAGStats();
+      }
+    }
+
+    async function fetchRAGStats() {
+      const rowsEl = document.getElementById('rag-stat-rows');
+      const colEl = document.getElementById('rag-stat-col');
+      const dimEl = document.getElementById('rag-stat-dim');
+      if (!rowsEl) return;
+
+      const headers = {};
+      if (currentToken) headers['Authorization'] = `Bearer ${currentToken}`;
+
+      try {
+        const res = await fetch(`${API_BASE}/rag/stats`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          rowsEl.innerText = `${data.row_count || 0} 条切片`;
+          if (colEl && data.collection_name) colEl.innerText = data.collection_name;
+          if (dimEl && data.dimension) dimEl.innerText = `${data.dimension} 维`;
+        } else if (res.status === 401 || res.status === 403) {
+          rowsEl.innerText = '请先登录以查看';
+        } else {
+          rowsEl.innerText = '-- 条';
+        }
+      } catch (err) {
+        rowsEl.innerText = '连接异常';
+      }
+    }
+
+    function handleRAGFileChosen(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      selectedRAGFile = file;
+      const label = document.getElementById('rag-file-label');
+      label.innerHTML = `已选择: <span style="color: var(--accent-cyan); font-weight: 600;">${file.name}</span> (${(file.size / 1024).toFixed(1)} KB)`;
+    }
+
+    async function ingestRAGFile() {
+      if (!selectedRAGFile) return alert('请先点击上方区域选择要上传的文档');
+      if (!currentToken) return alert('请先在左侧登录账号');
+
+      const feedback = document.getElementById('rag-ingest-feedback');
+      const btn = document.getElementById('btn-ingest-file');
+      const category = document.getElementById('rag-file-category').value;
+
+      btn.disabled = true;
+      btn.innerText = '⏳ 切片向量化中...';
+      feedback.innerHTML = '<span style="color: var(--accent-cyan);">正在解析文档并写入 Milvus 向量库...</span>';
+
+      const formData = new FormData();
+      formData.append('file', selectedRAGFile);
+      formData.append('category', category);
+      formData.append('doc_name', selectedRAGFile.name);
+
+      try {
+        const res = await fetch(`${API_BASE}/rag/ingest/file`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${currentToken}` },
+          body: formData
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || '上传录入失败');
+
+        feedback.innerHTML = `
+          <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); padding: 0.5rem; border-radius: var(--radius-sm); color: var(--accent-green);">
+            ✓ <b>录入成功!</b> 生成 <b>${data.chunk_count}</b> 个切片，已入库 <b>${data.inserted_count}</b> 条向量。<br/>
+            <span style="font-size: 0.65rem; color: var(--text-muted);">文档ID: ${data.doc_id}</span>
+          </div>
+        `;
+        selectedRAGFile = null;
+        document.getElementById('rag-file-label').innerText = '点击或拖拽上传文档';
+        document.getElementById('rag-file-input').value = '';
+        fetchRAGStats();
+      } catch (err) {
+        feedback.innerHTML = `<span style="color: var(--accent-rose);">❌ ${err.message}</span>`;
+      } finally {
+        btn.disabled = false;
+        btn.innerText = '🚀 录入 Milvus';
+      }
+    }
+
+    async function ingestRAGText() {
+      const title = document.getElementById('rag-text-title').value.trim() || '快速录入文档.md';
+      const text = document.getElementById('rag-text-content').value.trim();
+      if (!text) return alert('请输入文本或制度内容');
+      if (!currentToken) return alert('请先在左侧登录账号');
+
+      try {
+        const res = await fetch(`${API_BASE}/rag/ingest/text`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${currentToken}`
+          },
+          body: JSON.stringify({
+            text: text,
+            doc_name: title,
+            category: 'general'
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || '文本录入失败');
+
+        alert(`✓ 录入成功！生成 ${data.chunk_count} 个切片并已写入 Milvus。`);
+        document.getElementById('rag-text-content').value = '';
+        fetchRAGStats();
+      } catch (err) {
+        alert(`❌ 录入出错: ${err.message}`);
+      }
+    }
+
+    async function queryRAGTest() {
+      const query = document.getElementById('rag-search-query').value.trim();
+      if (!query) return alert('请输入测试问题');
+      if (!currentToken) return alert('请先在左侧登录账号');
+
+      const resultsBox = document.getElementById('rag-search-results');
+      resultsBox.innerHTML = '<div style="color: var(--accent-cyan); font-size: 0.75rem; text-align: center; padding: 0.8rem;">⏳ 双路混合检索中 (Milvus + BM25 + RRF)...</div>';
+
+      try {
+        const res = await fetch(`${API_BASE}/rag/query`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${currentToken}`
+          },
+          body: JSON.stringify({ query: query, top_k: 3 })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || '检索失败');
+
+        if (!data.results || data.results.length === 0) {
+          resultsBox.innerHTML = '<div style="color: var(--text-muted); font-size: 0.75rem; text-align: center; padding: 0.8rem;">未召回到相关切片。</div>';
+          return;
+        }
+
+        let html = '';
+        data.results.forEach((item, idx) => {
+          html += `
+            <div class="rag-hit-item">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.2rem;">
+                <span style="color: var(--accent-primary); font-weight: 600;">#${idx + 1} ${escapeHtml(item.doc_name || '未知文档')}</span>
+                <span style="font-size: 0.65rem; color: var(--accent-green); background: rgba(16,185,129,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">RRF: ${item.rrf_score.toFixed(4)}</span>
+              </div>
+              <div style="color: var(--text-main); font-size: 0.72rem; line-height: 1.35; max-height: 80px; overflow-y: auto;">
+                ${escapeHtml(item.chunk_text)}
+              </div>
+              <div style="margin-top: 0.3rem; text-align: right;">
+                <button class="btn" style="font-size: 0.65rem; padding: 0.15rem 0.4rem;" onclick="fillChatWithQuestion('${escapeHtml(query)}')">向 Agent 提问此问题 💬</button>
+              </div>
+            </div>
+          `;
+        });
+        resultsBox.innerHTML = html;
+      } catch (err) {
+        resultsBox.innerHTML = `<div style="color: var(--accent-rose); font-size: 0.75rem; padding: 0.5rem;">❌ ${err.message}</div>`;
+      }
+    }
+
+    function askRAGSample(question) {
+      document.getElementById('rag-search-query').value = question;
+      queryRAGTest();
+    }
+
+    function fillChatWithQuestion(text) {
+      const input = document.getElementById('user-input');
+      input.value = text;
+      input.focus();
+      autoResizeTextarea(input);
     }
 
     // ==========================================
