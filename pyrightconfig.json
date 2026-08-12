@@ -1,0 +1,23 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.13",
+  "typeCheckingMode": "standard",
+  "include": [
+    "app",
+    "evals"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/.venv",
+    "alembic/versions",
+    "migrations",
+    "venv"
+  ],
+  "stubPath": "typings",
+  "reportMissingTypeStubs": false,
+  "reportDuplicateImport": "error",
+  "reportInvalidTypeVarUse": "error",
+  "reportSelfClsParameterName": "error",
+  "reportImplicitOverride": "warning"
+}

@@ -1,6 +1,6 @@
-# Agent Tools 开发学习与生产级进阶路线图
+# AI Agent & RAG 系统开发学习与生产级进阶路线图
 
-基于当前项目（FastAPI + LangGraph + PostgreSQL + MCP）的实战迭代路径，对标工业界生产级（Production-Ready）Agent 架构标准，从简到难分为 5 个阶段。
+基于当前项目（FastAPI + LangGraph + PostgreSQL + MCP）的实战迭代路径，并融合 [nageoffer.com（拿个offer）](https://nageoffer.com/) 的 **《AI 工程师学习手册》** 与 **《Ragent AI 企业级 Agentic RAG 实战课》** 核心精髓，对标工业界生产级（Production-Ready）标准制定本路线图。
 
 ---
 
@@ -40,42 +40,58 @@
 
 ---
 
-## 阶段二：有状态工具与工具链工程（进阶进行中 🟡 85%）
+## 阶段二：企业级 RAG 检索增强与向量数据库（进阶进行中 🟡 70%）
 
-> **难度**：⭐⭐  
-> **状态**：**85% 已完成**  
-> **核心目标**：掌握多工具协同传递数据、多模态融合、副作用管理与高级 RAG。
+> **难度**：⭐⭐⭐  
+> **状态**：**进行中 70%**（Web 抓取与用户记忆已完成，知识库多路混合检索与 Milvus 待落地）  
+> **核心目标**：攻克文档入库 Pipeline、Milvus 向量存储与 HNSW 索引、BM25 混合检索、加权 RRF 融合、BGE-Reranker 精排与 Grounding 溯源。
 
-### 1. 网页内容深度抓取（Web-RAG）✅
-- **进阶特性**：不仅提取纯文本，还将 HTML 转换为标准 Markdown，保留多级标题（`# ~ ######`）、Markdown 表格与代码块，并自动提取文档大纲目录（TOC）。
-- **直存机制**：支持 `save_to_workspace_file` 参数，直接将数万字超长文本写入工作区文件，避免多次截断切片。
-
-### 2. 多模态 Vision 图像识别 ✅
-- 接收图片路径或 Base64 编码，调用多模态模型提取发票、图表、代码截图中的结构化数据。
-
-### 3. 工具副作用治理与人机协同（HITL）✅
-- 对于发送邮件、转账、删除数据等**不可逆副作用**操作，配合 `ask_human` 工具中断工作流，生成草稿并等待用户在前端确认后再执行。
-
-### 4. 企业级 RAG 知识库检索（待实战 🎯）
-*当前项目已实现 `mem0ai` 用户记忆，需进一步扩展企业级私有文档检索：*
-```python
-@tool
-async def search_enterprise_kb(query: str, collection: str = "kb_docs", top_k: int = 5) -> str:
-    """在企业知识库中进行混合检索（关键词 + 语义向量）并重排序。"""
-    # 1. 密集向量检索 (Dense Retrieval - pgvector / Ollama bge-m3)
-    # 2. 稀疏全文检索 (Sparse Retrieval - PostgreSQL tsvector / BM25)
-    # 3. Reranker 模型二次打分重排 (BGE-Reranker)，剔除低分噪音
-    ...
+```
+                                  【 企业级 RAG 架构全景 】
+                                             │
+      ┌──────────────────────────────────────┼──────────────────────────────────────┐
+      ▼                                      ▼                                      ▼
+【1. Ingestion 流水线】             【2. 混合检索与精排漏斗】             【3. 受控生成与溯源】
+ ├─ Apache Tika / Markdown 解析      ├─ 密集向量: Milvus / pgvector (HNSW) ├─ Prompt 注入与负向约束
+ ├─ 带 Overlap 递归分块 (500~1000)   ├─ 稀疏全文: BM25 / ES 关键词精确匹配  ├─ 引用角标标注 ([1], [2])
+ ├─ 元数据绑定 (doc_id, source)      ├─ 加权 RRF 倒数排名无监督融合         └─ SSE 单向打字机流式推送
+ └─ Embedding 向量化 (bge-m3)        └─ BGE-Reranker 交叉二次打分过滤
 ```
 
-**下一步攻坚点**：
-- [ ] 文档解析器（PDF / Word / Excel / Markdown）
-- [ ] 语义切分（Chunking）策略与元数据关联
-- [ ] 混合检索（Hybrid Search: BM25 + Vector）+ Rerank 过滤
+### 1. RAG 核心生命周期（六步标准流程）
+- **准备阶段（离线）**：
+  1. `Ingest`：解析 PDF/Word/Markdown，清洗 HTML 标签与表格。
+  2. `Chunk`：按 500~1000 字符切块，保留 100 字符重叠（Overlap），防止上下文割裂。
+  3. `Embed`：调用 `bge-m3` / `text-embedding-v4` 将文本转化为高维密集向量。
+  4. `Index`：存入向量数据库，建立 HNSW / IVF 索引加速近邻检索。
+- **运行阶段（在线）**：
+  5. `Retrieve`：将用户提问向量化，执行 Top-K 相似度检索。
+  6. `Answer`：组装参考资料与负向提示词（“未提及请明确说明不知”），受控流式生成。
+
+### 2. 双擎协同架构设计（PostgreSQL + Milvus）
+- **架构决策**：**不全盘推翻 PG，而是采用“双擎协同 / RAG as a Tool”**。
+  - **PostgreSQL**：负责业务表（User/Session/Message）+ LangGraph 状态机检查点（`AsyncPostgresSaver`）+ 轻量长期记忆（`mem0`）。
+  - **Milvus**：负责 **海量企业知识库切片（百万+）+ HNSW 高速近邻搜索 + 多租户 Partition Key 隔离**。
+
+### 3. Milvus Standalone 部署与 Attu 可视化
+- 使用 Docker Compose 一键拉起 `etcd` + `rustfs/minio` + `milvus-standalone` + `attu`（管理面板映射到宿主机 `8001` 端口，避免占用 FastAPI `8000`）。
+- 常用索引对比与选型：
+  - **HNSW**：速度最快（1~5ms）、召回率极高（>98%），适合百万级高要求场景（内存开销较大）。
+  - **IVF_FLAT / IVF_SQ8**：基于聚类分区，SQ8 标量量化可将内存压缩 75%，适合千万级大规模场景。
+
+### 4. 攻坚清单（已全部完成 ✅）
+- [x] Web-RAG 网页结构化抓取与工作区直存 (`scrape_webpage`)
+- [x] `mem0ai` + pgvector 用户级偏好记忆检索
+- [x] 编写 `docker-compose.milvus.yml` 启动本地 Milvus + Attu（`v2.4.15` 容器群稳定运行）
+- [x] 实现 `app/services/rag/` 模块：文档 Ingestion Pipeline + 语义分块 (`text_splitter.py`)
+- [x] 实现 BM25 + Milvus 向量多路并行召回 + 加权 RRF 融合算法 (`hybrid_retriever.py`)
+- [x] 实现多级降级与确定性 Embedding 向量服务 (`embedding_service.py`)
+- [x] 将知识库封装为 LangGraph 工具 `@tool query_knowledge_base` 并挂载至全局图工作流
+- [x] 提供完整的 FastAPI RESTful API（文档录入、文件上传、混合检索、状态统计）并经全链路自测验证通过
 
 ---
 
-## 阶段三：自建 MCP Server（高级待实践 🎯 40%）
+## 阶段三：自建 MCP Server 微服务（高级待实践 🎯 40%）
 
 > **难度**：⭐⭐⭐  
 > **目标**：从“消费外部 MCP”进化为“独立开发并发布私有 MCP Server”，实现工具跨项目共享与微服务解耦。
@@ -124,10 +140,10 @@ if __name__ == "__main__":
 
 ---
 
-## 阶段四：Multi-Agent 多智能体系统（专家级架构 🎯 25%）
+## 阶段四：Multi-Agent 多智能体系统与 Agentic RAG（专家级架构 🎯 25%）
 
 > **难度**：⭐⭐⭐⭐  
-> **目标**：解决单 Agent 处理复合任务时的步数超限、Token 爆炸与单点能力瓶颈。
+> **目标**：解决单 Agent 处理复合任务时的步数超限、Token 爆炸与单点能力瓶颈，实现自适应决策与分工协作。
 
 ### 架构演进：从单 Agent 到 Supervisor 协作网络
 
@@ -148,12 +164,14 @@ if __name__ == "__main__":
 └───────────────────────┘ └──────────────────────┘ └───────────────────────┘
 ```
 
-### 在当前项目中的演进实现方式
+### 核心设计模式
 1. **LangGraph Subgraphs（子图模块化）**：
-   - 将特定垂直领域的任务（如代码编写、文档生成）抽离为独立的 `CompiledStateGraph`。
-   - 每个子图拥有独立的 `recursion_limit` 和私有 State，执行完毕后仅把最终摘要返回给主图。
-2. **Supervisor 路由编排**：
-   - 主模型根据当前进度决定下一步转交给哪个专职子智能体，直到所有子任务全部完成。
+   - 将特定垂直领域（如代码沙箱执行、超长网页切片研究、Word 排版）拆为独立子图。
+   - 每个子图拥有独立的 `recursion_limit` 与局部 State，完成后仅返回精简摘要给主图。
+2. **Agentic RAG（智能体自适应检索）**：
+   - 模型将 RAG 作为一种 Tool，自主判断“何时需要查资料”、“何时直接作答”、“检索不理想时自我反思并改写问题重试”。
+3. **MessageHub 与通信治理**：
+   - 通过共享状态字典消除多 Agent 间的上下文割裂，并在传递过程中裁剪冗余 Observation。
 
 ---
 
@@ -165,6 +183,7 @@ if __name__ == "__main__":
 ### 1. 递归步数与熔断保护策略
 - 在 [config.py](file:///d:/Learn/fastapi-langgraph-agent-zh-master/app/core/config.py) 中合理配置 `LANGGRAPH_RECURSION_LIMIT`（当前已优化为 50）。
 - **死循环侦测**：当连续 3 次调用同名工具且入参完全相同时，主动中断并请求人类协助。
+- **三态熔断机制**：对上游 LLM 供应商设置健康探测与熔断降级。
 
 ### 2. 上下文预算管理（Context & Token Management）
 - **Tool Output Summarization**：当工具返回超过 10,000 字符时，在存入 State 前调用轻量级模型生成关键摘要。
@@ -175,20 +194,35 @@ if __name__ == "__main__":
 
 ### 4. LLM-Ops 持续评测与监控闭环
 - **指标大盘**：Prometheus + Grafana 持续监控 LLM TTFT（首 Token 延迟）、工具调用成功率、TP99 耗时。
-- **质量评测**：基于 `evals/` 框架，每日对线上真实 Trace 采样，进行幻觉率（Hallucination）与任务达成率（Helpfulness）自动化打分。
+- **质量评测**：基于 `evals/` 框架，每日对线上真实 Trace 采样，进行幻觉率（Hallucination）、检索忠实度与任务达成率（Helpfulness）自动化打分。
 
 ---
 
-## 学习规划路线推荐（时间表）
+## 📅 8 周系统学习与实战规划路线图
 
 ```
-[已完成] 阶段一：静态工具全部实战 + 沙箱安全 (天气/文件/SQL/代码)
-[已完成] 阶段二（上）：网页结构化抓取 + 视觉多模态 + 邮件 HITL
--------------------------------------------------------------------------
-[当前计划 第 1 周]：阶段二（下）企业级混合检索 RAG（Hybrid Search + Reranker）
-[当前计划 第 2 周]：阶段三 使用 FastMCP 搭建第一个独立的私有 MCP 微服务
-[当前计划 第 3-4 周]：阶段四 LangGraph Subgraphs 与 Multi-Agent 协作架构设计
-[当前计划 第 5 周]：阶段五 上下文修剪压缩 (Token Management) 与沙箱隔离加固
+┌──────────────┬─────────────────────────────────────────────────────────────────────────┐
+│ 阶段 / 时间   │ 核心实战攻坚任务                                                         │
+├──────────────┼─────────────────────────────────────────────────────────────────────────┤
+│ 第 1~2 周    │ 【基础与静态工具】已掌握 ✅                                              │
+│              │ • 静态 Tool 注册、Pydantic 入参校验、Tenacity 重试与沙箱安全防护          │
+│              │ • Web 抓取 Markdown 结构化清洗、视觉识别、邮件 HITL 人机协同               │
+├──────────────┼─────────────────────────────────────────────────────────────────────────┤
+│ 第 3~4 周    │ 【企业级 RAG 检索增强体系】🎯 当前攻坚重点                              │
+│              │ • 启动 Docker Milvus + Attu 可视化管理面板                              │
+│              │ • 搭建 Ingestion 流水线：长文本语义分块 (Chunking + Overlap)             │
+│              │ • 实现 BM25 + Milvus (HNSW) 混合检索与加权 RRF 融合算法                  │
+│              │ • 接入 BGE-Reranker 精排与 Grounding 溯源角标标注                       │
+├──────────────┼─────────────────────────────────────────────────────────────────────────┤
+│ 第 5~6 周    │ 【自建 FastMCP 与 Agentic RAG】                                          │
+│              │ • 使用 FastMCP 构建独立的 Office/数据分析微服务                          │
+│              │ • 将 Milvus 混合检索封装为 `@tool`，跑通 Agent 自主反思与检索闭环       │
+├──────────────┼─────────────────────────────────────────────────────────────────────────┤
+│ 第 7~8 周    │ 【Multi-Agent 协作与生产级治理】                                         │
+│              │ • LangGraph Subgraphs 子图拆分与 Supervisor 主从协作路由                 │
+│              │ • 上下文修剪压缩 (Token Management) 与三态熔断保护                      │
+│              │ • 基于 Evals + Langfuse 的 RAG 准确率与无幻觉率量化评测                   │
+└──────────────┴─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---

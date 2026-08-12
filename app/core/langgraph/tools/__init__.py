@@ -27,6 +27,7 @@ from .email_sender import send_email_notification
 from .file_ops import list_workspace_files, read_workspace_file, write_workspace_file
 from .image_analyzer import analyze_image
 from .qweather import get_weather_now, search_location_id
+from .rag_search import query_knowledge_base
 from .web_scraper import scrape_webpage
 
 # 静态工具：同步加载，始终可用
@@ -46,6 +47,7 @@ static_tools: list[BaseTool] = [
     scrape_webpage,
     analyze_image,
     send_email_notification,
+    query_knowledge_base,
 ]
 
 

@@ -217,6 +217,15 @@ class Settings:
         self.VALKEY_MAX_CONNECTIONS = int(os.getenv("VALKEY_MAX_CONNECTIONS", "20"))
         self.CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "60"))
 
+        # Milvus 向量数据库与 RAG 知识库配置
+        self.MILVUS_HOST = os.getenv("MILVUS_HOST", "localhost")
+        self.MILVUS_PORT = int(os.getenv("MILVUS_PORT", "19530"))
+        self.MILVUS_URL = os.getenv("MILVUS_URL", "")
+        self.MILVUS_TOKEN = os.getenv("MILVUS_TOKEN", "")
+        self.RAG_COLLECTION_NAME = os.getenv("RAG_COLLECTION_NAME", "rag_knowledge_base")
+        self.RAG_EMBEDDING_DIMS = int(os.getenv("RAG_EMBEDDING_DIMS", "1024"))
+        self.RAG_EMBEDDING_MODEL = os.getenv("RAG_EMBEDDING_MODEL", "text-embedding-v4")
+
         # 限流配置
         self.RATE_LIMIT_DEFAULT = parse_list_from_env("RATE_LIMIT_DEFAULT", ["200 per day", "50 per hour"])
 
@@ -285,6 +294,13 @@ class Settings:
             # 仅在环境变量未显式设置时覆盖
             if env_var_name not in os.environ:
                 setattr(self, key, value)
+
+    @property
+    def milvus_uri(self) -> str:
+        """获取 Milvus 服务的连接 URI."""
+        if self.MILVUS_URL:
+            return self.MILVUS_URL
+        return f"http://{self.MILVUS_HOST}:{self.MILVUS_PORT}"
 
 
 # 创建配置实例
