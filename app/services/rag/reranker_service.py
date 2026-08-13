@@ -24,13 +24,20 @@ class OllamaRerankerService:
             "OLLAMA_BASE_URL", "http://host.docker.internal:11434"
         )).rstrip("/")
         self._available: bool | None = None  # None = 未探测
+        self._last_failed_at: float = 0.0     # 上次探活失败的时间戳
+        self._retry_cooldown: float = 60.0    # 失败后 60 秒内不重复探活
 
     async def _check_available(self) -> bool:
-        """探测 Ollama reranker 是否可用（只探测一次，结果缓存）."""
-        if self._available is not None:
-            return self._available
+        """探测 Ollama reranker 是否可用（成功后永久缓存；失败后 60s 冷却重试）."""
+        import time
+        # 已确认可用 → 直接返回
+        if self._available is True:
+            return True
+        # 失败冷却期内 → 跳过重试
+        if self._available is False and (time.monotonic() - self._last_failed_at) < self._retry_cooldown:
+            return False
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
+            async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.post(
                     f"{self.base_url}/api/embed",
                     json={"model": self.model_name, "input": ["test"]},
@@ -43,15 +50,17 @@ class OllamaRerankerService:
                         base_url=self.base_url,
                     )
                 else:
+                    self._last_failed_at = time.monotonic()
                     logger.warning(
                         "reranker_unavailable",
                         model=self.model_name,
                         status=resp.status_code,
                     )
         except Exception as e:
-            logger.warning("reranker_check_failed", error=str(e), model=self.model_name)
             self._available = False
-        return self._available
+            self._last_failed_at = time.monotonic()
+            logger.warning("reranker_check_failed", error=str(e), model=self.model_name)
+        return bool(self._available)
 
     def _score_from_embedding(self, vec: list[float]) -> float:
         """从 Cross-Encoder 的 embedding 输出提取相关性分数.
