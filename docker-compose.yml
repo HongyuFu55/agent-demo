@@ -68,6 +68,29 @@ services:
     networks:
       - monitoring
 
+  # Independent Memory Worker service for async queue processing
+  memory-worker:
+    build:
+      context: .
+      args:
+        APP_ENV: ${APP_ENV:-development}
+    command: python -m scripts.run_memory_worker
+    volumes:
+      - ./app:/app/app
+      - ./logs:/app/logs
+      - ./storage:/app/storage
+    env_file:
+      - .env.${APP_ENV:-development}
+    environment:
+      - APP_ENV=${APP_ENV:-development}
+      - TZ=Asia/Shanghai
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - monitoring
+
   # Prometheus
   prometheus:
     image: prom/prometheus:latest

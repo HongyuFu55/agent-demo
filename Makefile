@@ -44,6 +44,9 @@ staging:
 prod:
 	@$(call run_with_env,$(MAKE) _serve ENV=production)
 
+memory-worker:
+	@$(call run_with_env,python -m scripts.run_memory_worker)
+
 _serve:
 	@$(call run_with_env,./.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --loop uvloop)
 

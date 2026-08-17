@@ -209,13 +209,16 @@ class Settings:
         self.POSTGRES_MAX_OVERFLOW = int(os.getenv("POSTGRES_MAX_OVERFLOW", "10"))
         self.CHECKPOINT_TABLES = ["checkpoint_blobs", "checkpoint_writes", "checkpoints"]
 
-        # Valkey/Redis 缓存配置（可选；配置 host 后启用）
+        # Valkey/Redis 缓存与消息队列配置（可选；配置 host 后启用）
         self.VALKEY_HOST = os.getenv("VALKEY_HOST", "")
         self.VALKEY_PORT = int(os.getenv("VALKEY_PORT", "6379"))
         self.VALKEY_DB = int(os.getenv("VALKEY_DB", "0"))
         self.VALKEY_PASSWORD = os.getenv("VALKEY_PASSWORD", "")
         self.VALKEY_MAX_CONNECTIONS = int(os.getenv("VALKEY_MAX_CONNECTIONS", "20"))
         self.CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "60"))
+        self.VALKEY_MEMORY_STREAM_NAME = os.getenv("VALKEY_MEMORY_STREAM_NAME", "memory_task_stream")
+        self.VALKEY_MEMORY_DLQ_NAME = os.getenv("VALKEY_MEMORY_DLQ_NAME", "memory_task_dlq")
+        self.VALKEY_MEMORY_CONSUMER_GROUP = os.getenv("VALKEY_MEMORY_CONSUMER_GROUP", "memory_workers")
 
         # Milvus 向量数据库与 RAG 知识库配置
         is_in_docker = Path("/.dockerenv").exists() or os.getenv("POSTGRES_HOST") == "db"

@@ -57,6 +57,7 @@ from app.schemas import (
 )
 from app.services.llm import llm_service
 from app.services.memory import memory_service
+from app.services.memory_queue import memory_queue_service
 from app.utils import (
     dump_messages,
     extract_text_content,
@@ -360,8 +361,8 @@ class LangGraphAgent:
                 return [Message(role="assistant", content=str(interrupt_value))]
 
             openai_msgs = cast(list[dict], convert_to_openai_messages(response["messages"]))
-            # 记忆写入不阻塞响应返回，后台异步执行
-            asyncio.create_task(memory_service.add(user_id, openai_msgs, config.get("metadata")))
+            # 记忆投递至 Valkey/Redis Stream 解耦队列与防抖服务，主流程 1ms 内完成
+            asyncio.create_task(memory_queue_service.enqueue(user_id, openai_msgs, config.get("metadata")))
             return self.__process_messages(response["messages"])
         except GraphInterrupt:
             state = await graph.aget_state(config)
@@ -471,8 +472,8 @@ class LangGraphAgent:
                 yield str(interrupt_value)
             elif state.values and "messages" in state.values:
                 openai_msgs = cast(list[dict], convert_to_openai_messages(state.values["messages"]))
-                # 记忆写入放后台，不阻塞流式响应的关闭
-                asyncio.create_task(memory_service.add(user_id, openai_msgs, config.get("metadata")))
+                # 记忆投递至 Valkey/Redis Stream 解耦队列与防抖服务，主流程 1ms 内完成
+                asyncio.create_task(memory_queue_service.enqueue(user_id, openai_msgs, config.get("metadata")))
         except GraphInterrupt:
             state = await graph.aget_state(config)
             interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
