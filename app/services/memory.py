@@ -68,20 +68,7 @@ def should_update_memory(messages: list[dict[str, Any]]) -> bool:
     if not user_text:
         return False
 
-    # 2. 典型单次/临时动词黑名单（强拦截）
-    transient_patterns = [
-        r"^(帮我|请|给我)?(计算|算一下|求值|总结|概括|统计|翻译|润色|解释|分析|爬取|抓取|查询|查一下|查看)",
-        r"(怎么走|怎么去|出行方案|最佳路线|天气|降温|气温|股票|行情|汇率)",
-        r"^(写一个|写一段|编写|实现).*(代码|脚本|函数|类|算法|正则)",
-    ]
-    for pattern in transient_patterns:
-        if re.search(pattern, user_text):
-            # 特殊情况：如果包含明确的记忆强制指令，则不拦截
-            if not any(force_kw in user_text for force_kw in ["请记住", "记住我", "以后的回答"]):
-                logger.debug("memory_update_skipped_by_gatekeeper", reason="transient_pattern_matched", snippet=user_text[:60])
-                return False
-
-    # 3. 显式长期个人属性/偏好指示词（白名单特征）
+    # 2. 显式长期个人属性/偏好指示词（白名单特征优先匹配，如“我住在”、“我是”、“请记住”）
     profile_keywords = [
         "我是", "我叫", "我住在", "我常驻", "我的家", "家在",
         "我喜欢", "我偏好", "我习惯", "我不吃", "我吃素", "过敏",
@@ -91,6 +78,17 @@ def should_update_memory(messages: list[dict[str, Any]]) -> bool:
     ]
     if any(kw in user_text for kw in profile_keywords):
         return True
+
+    # 3. 典型单次/临时动词黑名单（拦截无画像特性的纯临时查询/计算/脚本请求）
+    transient_patterns = [
+        r"^(帮我|请|给我)?(计算|算一下|求值|总结|概括|统计|翻译|润色|解释|分析|爬取|抓取|查询|查一下|查看)",
+        r"(怎么走|怎么去|出行方案|最佳路线|天气|降温|气温|股票|行情|汇率)",
+        r"^(写一个|写一段|编写|实现).*(代码|脚本|函数|类|算法|正则)",
+    ]
+    for pattern in transient_patterns:
+        if re.search(pattern, user_text):
+            logger.debug("memory_update_skipped_by_gatekeeper", reason="transient_pattern_matched", snippet=user_text[:60])
+            return False
 
     # 4. 上下文问答承接放行（例如 Assistant 询问个人信息，User 进行简短回答）
     context_inquiry_keywords = ["您叫什么", "您的名字", "您的职业", "您常驻", "您住在", "您的技术栈", "您的偏好"]
@@ -226,8 +224,11 @@ class MemoryService:
         """清理该用户的旧搜索缓存，确保记忆实时一致."""
         try:
             # 如果 cache_service 支持通配符删除或前缀扫描：
-            if hasattr(cache_service, "delete_pattern"):
-                await cache_service.delete_pattern(f"*memory:{user_id}:*")
+            delete_fn = getattr(cache_service, "delete_pattern", None)
+            if delete_fn is not None:
+                res = delete_fn(f"*memory:{user_id}:*")
+                if asyncio.iscoroutine(res):
+                    await res
         except Exception as e:
             logger.warning("清理用户记忆缓存失败", user_id=user_id, error=str(e))
 
