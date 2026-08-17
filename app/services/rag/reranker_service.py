@@ -100,7 +100,7 @@ class OllamaRerankerService:
         inputs = [f"{query}\n\n{c.get('chunk_text', '')}" for c in candidates]
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=8.0) as client:
                 resp = await client.post(
                     f"{self.base_url}/api/embed",
                     json={"model": self.model_name, "input": inputs},

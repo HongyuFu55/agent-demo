@@ -109,7 +109,7 @@ async def scrape_webpage(
         async with httpx.AsyncClient(
             headers=DEFAULT_HEADERS,
             follow_redirects=True,
-            timeout=15.0,
+            timeout=8.0,
             verify=False,
         ) as client:
             response = await client.get(target_url)

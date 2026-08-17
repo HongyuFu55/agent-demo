@@ -13,15 +13,14 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from app.core.logging import logger
 from app.core.langgraph.tools.file_ops import WORKSPACE_DIR
 
-# 代码执行默认超时限制 (30 秒)，防止死循环卡死服务，同时兼容 pandas/numpy 模块加载
-EXEC_TIMEOUT_SECONDS = 30.0
+# 代码执行默认超时限制 (12 秒)，快速失败以避免防爬卡死与死循环，提升首字/整体响应效率
+EXEC_TIMEOUT_SECONDS = 12.0
 
 # 结果文本最大返回字符数，防止输出过大冲垮 LLM 上下文
 MAX_OUTPUT_LENGTH = 4000
 
 
 @tool
-@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=3))
 async def execute_python_code(code: str) -> str:
     """在独立的子进程中安全动态执行 Python 代码并返回 stdout/stderr 输出。
 
@@ -74,7 +73,10 @@ async def execute_python_code(code: str) -> str:
             except Exception:
                 pass
             logger.warning("python_code_execution_timeout", code_snippet=clean_code[:100])
-            return f"[ERROR] 代码执行超时（超过 {EXEC_TIMEOUT_SECONDS} 秒限制），已强行终止！可能包含死循环。"
+            return (
+                f"[ERROR] 代码执行超时（超过 {EXEC_TIMEOUT_SECONDS} 秒限制），已强制终止！\n"
+                "提示：如果目标网站存在防爬验证、卡住或处理数据量过大，请勿继续盲目编写重复的爬虫或死循环代码，直接告知用户无法抓取该目标。"
+            )
 
         stdout_text = stdout_bytes.decode("utf-8", errors="replace").strip()
         stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()

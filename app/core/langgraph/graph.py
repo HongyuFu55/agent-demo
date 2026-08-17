@@ -431,18 +431,37 @@ class LangGraphAgent:
                 latest_user_message = [msg for msg in messages if msg.role == "user"][-1]
                 graph_input = {"messages": [latest_user_message.model_dump()], "long_term_memory": relevant_memory}
 
+            seen_tool_names: set[str] = set()
+
             async for token, _ in graph.astream(
                 graph_input,
                 config,
                 stream_mode="messages",
             ):
-                # stream_mode="messages" 会同时产出工具消息等，只透传 AI 文本 token
-                if not isinstance(token, (AIMessage, AIMessageChunk)):
-                    continue
+                # 捕获工具调用 chunk，第一时间向前端透传状态 token，极大消除首字感知延迟
+                if isinstance(token, (AIMessage, AIMessageChunk)):
+                    tool_chunks = getattr(token, "tool_call_chunks", None)
+                    if tool_chunks:
+                        for chunk in tool_chunks:
+                            name = chunk.get("name")
+                            if name and name not in seen_tool_names:
+                                seen_tool_names.add(name)
+                                tool_display_names = {
+                                    "query_knowledge_base": "检索企业私有知识库",
+                                    "execute_python_code": "运行 Python 数据分析/爬虫代码",
+                                    "scrape_webpage": "抓取并解析网页正文",
+                                    "duckduckgo_search": "网络搜索",
+                                    "send_email_notification": "发送邮件通知",
+                                    "analyze_image": "分析图片/视觉图表",
+                                    "calculator": "数值计算",
+                                    "get_weather_now": "查询实时天气",
+                                }
+                                display_name = tool_display_names.get(name, name)
+                                yield f"\n\n⚙️ *[系统提示: 正在调用工具 `{display_name}` 处理中...]*\n\n"
 
-                text = extract_text_content(token.content)
-                if text:
-                    yield text
+                    text = extract_text_content(token.content)
+                    if text:
+                        yield text
 
             # 流式结束后检查是否触发了 interrupt（如 ask_human），有则把 interrupt 值作为最后一条消息推送
             state = await graph.aget_state(config)

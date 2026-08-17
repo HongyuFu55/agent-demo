@@ -142,8 +142,8 @@ class HybridRetriever:
                 item_map[key] = hit
             merged_scores[key] = merged_scores.get(key, 0.0) + (self.sparse_weight / (self.rrf_k + rank))
 
-        # 按 RRF 融合得分降序排序，多保留候选供 Reranker 精排
-        rrf_pool_size = top_k * 3 if self.use_reranker else top_k
+        # 按 RRF 融合得分降序排序，限制最多 10 条候选送入 Reranker (避免 CPU 模式下耗时过大)
+        rrf_pool_size = min(top_k * 2, 10) if self.use_reranker else top_k
         sorted_keys = sorted(merged_scores.keys(), key=lambda k: merged_scores[k], reverse=True)[:rrf_pool_size]
 
         rrf_results: list[dict[str, Any]] = []
