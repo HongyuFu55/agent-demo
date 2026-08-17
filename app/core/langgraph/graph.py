@@ -199,8 +199,19 @@ class LangGraphAgent:
         tool_calls = state.messages[-1].tool_calls
 
         async def _execute_tool(tool_call: dict) -> ToolMessage:
-            tool_result = await self.tools_by_name[tool_call["name"]].ainvoke(tool_call["args"])
-            str_result = str(tool_result)
+            try:
+                tool_instance = self.tools_by_name[tool_call["name"]]
+                tool_result = await tool_instance.ainvoke(tool_call["args"])
+                str_result = str(tool_result)
+            except Exception as e:
+                logger.warning(
+                    "tool_execution_exception",
+                    name=tool_call["name"],
+                    args=tool_call.get("args"),
+                    error=str(e),
+                )
+                str_result = f"工具 [{tool_call['name']}] 执行出错: {str(e)}。提示：如果缺少必要参数 (如 poiId/URL/关键词)，请尝试调整参数或更换其他匹配的工具。"
+
             logger.info("tool_executed_result", name=tool_call["name"], result_snippet=str_result[:200])
             if len(str_result) > 4000:
                 str_result = str_result[:4000] + "...<tool_result_truncated>"
