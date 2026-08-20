@@ -74,7 +74,7 @@ services:
       context: .
       args:
         APP_ENV: ${APP_ENV:-development}
-    command: python -m scripts.run_memory_worker
+    command: /app/.venv/bin/python -m scripts.run_memory_worker
     volumes:
       - ./app:/app/app
       - ./logs:/app/logs
@@ -112,7 +112,7 @@ services:
     volumes:
       - grafana-storage:/var/lib/grafana
       - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./grafana/dashboards/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
@@ -120,18 +120,19 @@ services:
       - monitoring
     restart: always
 
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:latest
-    ports:
-      - "8080:8080"
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:rw
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-    networks:
-      - monitoring
-    restart: always
+  # cadvisor (Optional for Linux host; disabled on Windows host to prevent rootfs volume mount failure)
+  # cadvisor:
+  #   image: gcr.io/cadvisor/cadvisor:latest
+  #   ports:
+  #     - "8080:8080"
+  #   volumes:
+  #     - /:/rootfs:ro
+  #     - /var/run:/var/run:rw
+  #     - /sys:/sys:ro
+  #     - /var/lib/docker/:/var/lib/docker:ro
+  #   networks:
+  #     - monitoring
+  #   restart: always
 
 networks:
   monitoring:
