@@ -116,6 +116,8 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_DEFAULT_APP_LANGUAGE=zh-Hans
+      - GF_DATE_FORMATS_DEFAULT_TIMEZONE=Asia/Shanghai
     networks:
       - monitoring
     restart: always

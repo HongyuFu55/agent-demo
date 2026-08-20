@@ -1,65 +1,97 @@
 {
   "dashboard": {
     "id": null,
-    "uid": "llm-latency",
-    "title": "LLM Inference Latency",
-    "tags": ["inference", "latency"],
+    "uid": "fastapi-agent-overview",
+    "title": "⚡ Nexus Agent 生产级全链路监控大盘",
+    "tags": ["fastapi", "langgraph", "llm", "monitoring"],
     "timezone": "browser",
     "schemaVersion": 30,
-    "version": 3,
-    "refresh": "10s",
+    "version": 4,
+    "refresh": "5s",
     "panels": [
       {
-        "type": "graph",
-        "title": "LLM Inference Duration (p95)",
+        "type": "timeseries",
+        "title": "📊 HTTP 请求 QPS (按接口与状态码)",
+        "description": "展示各 API 路由的每秒请求速率及返回状态码 (200 / 429 / 500)",
         "targets": [
           {
-            "expr": "histogram_quantile(0.95, rate(llm_inference_duration_seconds_bucket[1m]))",
-            "legendFormat": "{{model}} (chat)",
+            "expr": "sum(rate(http_requests_total[1m])) by (endpoint, status)",
+            "legendFormat": "{{endpoint}} [{{status}}]",
             "refId": "A"
           }
         ],
         "datasource": "Prometheus",
-        "gridPos": { "x": 0, "y": 0, "w": 24, "h": 9 }
+        "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 }
       },
       {
-        "type": "graph",
-        "title": "LLM Stream Inference Duration (p95)",
+        "type": "timeseries",
+        "title": "⏱️ HTTP 接口响应耗时 P95 (秒)",
+        "description": "统计 API 接口的 95 分位响应延迟",
         "targets": [
           {
-            "expr": "histogram_quantile(0.95, rate(llm_stream_duration_seconds_bucket[1m]))",
-            "legendFormat": "{{model}} (stream)",
+            "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[1m])) by (le, endpoint))",
+            "legendFormat": "{{endpoint}} (P95 耗时)",
             "refId": "B"
           }
         ],
         "datasource": "Prometheus",
-        "gridPos": { "x": 0, "y": 9, "w": 24, "h": 9 }
+        "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 }
       },
       {
-        "type": "graph",
-        "title": "LLM Inference Duration (Average)",
+        "type": "timeseries",
+        "title": "🧠 LLM 单次推理 P95 耗时 (秒)",
+        "description": "各大模型（如 Qwen2.5 / DeepSeek）的单次推理端到端延迟",
         "targets": [
           {
-            "expr": "rate(llm_inference_duration_seconds_sum[1m]) / rate(llm_inference_duration_seconds_count[1m])",
-            "legendFormat": "{{model}} (avg)",
+            "expr": "histogram_quantile(0.95, sum(rate(llm_inference_duration_seconds_bucket[1m])) by (le, model))",
+            "legendFormat": "{{model}} (单次推理 P95)",
             "refId": "C"
           }
         ],
         "datasource": "Prometheus",
-        "gridPos": { "x": 0, "y": 18, "w": 24, "h": 9 }
+        "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 }
       },
       {
-        "type": "graph",
-        "title": "LLM Inference Request Count",
+        "type": "timeseries",
+        "title": "🌊 LLM 流式输出 (SSE) 持续耗时 P95 (秒)",
+        "description": "流式打字机响应从开始到完整输出结束的耗时",
         "targets": [
           {
-            "expr": "rate(llm_inference_duration_seconds_count[1m])",
-            "legendFormat": "{{model}}",
+            "expr": "histogram_quantile(0.95, sum(rate(llm_stream_duration_seconds_bucket[1m])) by (le, model))",
+            "legendFormat": "{{model}} (流式 P95)",
             "refId": "D"
           }
         ],
         "datasource": "Prometheus",
-        "gridPos": { "x": 0, "y": 27, "w": 24, "h": 9 }
+        "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 }
+      },
+      {
+        "type": "timeseries",
+        "title": "📈 LLM 模型调用频次 (QPS)",
+        "description": "各 LLM 模型的每秒调用请求次数",
+        "targets": [
+          {
+            "expr": "sum(rate(llm_inference_duration_seconds_count[1m])) by (model)",
+            "legendFormat": "{{model}} (调用频次)",
+            "refId": "E"
+          }
+        ],
+        "datasource": "Prometheus",
+        "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 }
+      },
+      {
+        "type": "timeseries",
+        "title": "🗄️ PostgreSQL 活跃数据库连接数",
+        "description": "监控后端连接池的健康状态与占用情况",
+        "targets": [
+          {
+            "expr": "db_connections",
+            "legendFormat": "活跃 DB 连接数",
+            "refId": "F"
+          }
+        ],
+        "datasource": "Prometheus",
+        "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 }
       }
     ]
   },
