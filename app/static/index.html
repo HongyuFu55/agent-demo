@@ -1725,7 +1725,7 @@
         return;
       }
 
-      container.innerHTML = currentMessages.map(msg => {
+      container.innerHTML = currentMessages.map((msg, index) => {
         const isUser = msg.role === 'user';
         let parsedContent = '';
         if (isUser) {
@@ -1762,20 +1762,33 @@
           parsedContent = marked.parse(msg.content || '');
           // 🛡️ 人机协同审批确认交互卡片
           if (msg.content && (msg.content.includes('【需要人工确认】') || msg.content.includes('human_approval_required'))) {
-            parsedContent += `
-              <div class="approval-action-card" style="margin-top: 0.9rem; padding: 0.75rem 0.9rem; background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(6, 182, 212, 0.4); border-radius: 8px; backdrop-filter: blur(8px);">
-                <div style="font-size: 0.82rem; color: #38bdf8; font-weight: bold; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
-                  <span>🛡️</span> 敏感操作审批决策
-                </div>
-                <div style="display: flex; gap: 0.6rem; align-items: center;">
-                  <button class="btn btn-primary" style="background: linear-gradient(135deg, #10b981, #059669); border: none; font-size: 0.8rem; padding: 0.35rem 0.85rem; cursor: pointer;" onclick="submitApprovalAction('确认发送')">
-                    ✅ 批准并发送
-                  </button>
-                  <button class="btn btn-danger" style="background: linear-gradient(135deg, #ef4444, #dc2626); border: none; font-size: 0.8rem; padding: 0.35rem 0.85rem; cursor: pointer;" onclick="submitApprovalAction('拒绝发送')">
-                    ❌ 拒绝发送
-                  </button>
-                </div>
-              </div>`;
+            const isLatest = index === currentMessages.length - 1;
+            if (msg.approvalHandled || !isLatest) {
+              const statusText = msg.approvalHandled || '已处理';
+              const isApproved = statusText.includes('确认') || statusText.includes('批准') || statusText.includes('同意') || statusText.includes('发送');
+              parsedContent += `
+                <div style="margin-top: 0.85rem; padding: 0.5rem 0.85rem; background: rgba(15, 23, 42, 0.75); border: 1px solid ${isApproved ? 'rgba(16, 185, 129, 0.45)' : 'rgba(239, 68, 68, 0.45)'}; border-radius: 8px; display: inline-flex; align-items: center; gap: 0.5rem;">
+                  <span style="font-size: 0.85rem; font-weight: 700; color: ${isApproved ? '#34d399' : '#f87171'};">
+                    ${isApproved ? '✅ 决策结果：已批准并执行' : '❌ 决策结果：已拒绝取消'}
+                  </span>
+                  <span style="color: var(--text-muted); font-size: 0.75rem;">(审批已归档)</span>
+                </div>`;
+            } else {
+              parsedContent += `
+                <div class="approval-action-card" id="approval-card-${index}" style="margin-top: 0.95rem; padding: 0.9rem 1.1rem; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 10px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);">
+                  <div style="font-size: 0.85rem; color: #38bdf8; font-weight: 700; margin-bottom: 0.7rem; display: flex; align-items: center; gap: 0.4rem;">
+                    <span>🛡️</span> 人机协同审批决策
+                  </div>
+                  <div style="display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap;">
+                    <button class="approval-btn" style="background: linear-gradient(135deg, #10b981, #059669); color: #ffffff !important; font-weight: 700; font-size: 0.85rem; padding: 0.45rem 1.1rem; border: none; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 0.4rem; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35); transition: all 0.2s ease;" onclick="submitApprovalAction(this, '确认发送', ${index})">
+                      <span style="font-size: 0.95rem;">✅</span> 批准并发送
+                    </button>
+                    <button class="approval-btn" style="background: linear-gradient(135deg, #ef4444, #dc2626); color: #ffffff !important; font-weight: 700; font-size: 0.85rem; padding: 0.45rem 1.1rem; border: none; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 0.4rem; box-shadow: 0 2px 8px rgba(239, 68, 68, 0.35); transition: all 0.2s ease;" onclick="submitApprovalAction(this, '拒绝发送', ${index})">
+                      <span style="font-size: 0.95rem;">❌</span> 拒绝发送
+                    </button>
+                  </div>
+                </div>`;
+            }
           }
         }
 
@@ -1920,12 +1933,42 @@
       });
     });
 
-    // Human-in-the-Loop Approval Action Handler
-    function submitApprovalAction(actionText) {
+    let isSubmittingApproval = false;
+
+    // Human-in-the-Loop Approval Action Handler (防重复点击 & 状态即时冻结)
+    async function submitApprovalAction(btnEl, actionText, msgIndex) {
+      if (isSubmittingApproval) return;
+      isSubmittingApproval = true;
+
+      // 立即禁用当前卡片内的所有操作按钮，防止连击
+      if (btnEl) {
+        const card = btnEl.closest('.approval-action-card');
+        if (card) {
+          const allBtns = card.querySelectorAll('.approval-btn');
+          allBtns.forEach(b => {
+            b.disabled = true;
+            b.style.opacity = '0.5';
+            b.style.cursor = 'not-allowed';
+            b.style.pointerEvents = 'none';
+          });
+          btnEl.innerHTML = `<span>⏳</span> 正在提交决策...`;
+        }
+      }
+
+      if (msgIndex !== undefined && currentMessages[msgIndex]) {
+        currentMessages[msgIndex].approvalHandled = actionText;
+      }
+
       const inputEl = document.getElementById('user-input');
-      if (!inputEl) return;
-      inputEl.value = actionText;
-      sendMessage();
+      if (inputEl) {
+        inputEl.value = actionText;
+      }
+
+      try {
+        await sendMessage();
+      } finally {
+        isSubmittingApproval = false;
+      }
     }
 
     // KeyPress Handler
