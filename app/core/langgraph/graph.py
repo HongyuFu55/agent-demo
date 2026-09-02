@@ -31,6 +31,7 @@ from langgraph.graph.state import (
 from langgraph.types import (
     RetryPolicy,
     StateSnapshot,
+    interrupt,
 )
 from psycopg import (
     AsyncConnection,
@@ -199,25 +200,90 @@ class LangGraphAgent:
         tool_calls = state.messages[-1].tool_calls
 
         async def _execute_tool(tool_call: dict) -> ToolMessage:
+            tool_name = tool_call["name"]
+            tool_args = tool_call.get("args", {})
+
+            # 🛡️ 敏感操作人机协同中断确认 (Human-in-the-Loop)
+            if tool_name == "send_email_notification":
+                to_email = str(tool_args.get("to_email", ""))
+                subject = str(tool_args.get("subject", ""))
+                content = str(tool_args.get("content", ""))
+
+                approval_prompt = (
+                    "⚠️ **【需要人工确认】智能体申请发送以下电子邮件：**\n\n"
+                    f"- 📧 **收件人**：`{to_email}`\n"
+                    f"- 📌 **主题**：`{subject}`\n\n"
+                    "📄 **邮件正文预览：**\n"
+                    "```text\n"
+                    f"{content}\n"
+                    "```\n\n"
+                    "请确认是否批准发送？您可以回复 **“确认发送”** 或 **“拒绝发送”**。"
+                )
+
+                approval_payload = {
+                    "type": "human_approval_required",
+                    "action": "send_email",
+                    "to_email": to_email,
+                    "subject": subject,
+                    "content": content,
+                    "message": approval_prompt,
+                }
+
+                logger.info(
+                    "human_in_the_loop_interrupt_triggered",
+                    tool_name=tool_name,
+                    to_email=to_email,
+                    subject=subject,
+                )
+
+                # 挂起当前状态机，等待人工确认
+                user_decision = interrupt(approval_payload)
+
+                # 恢复后检查用户决策
+                decision_str = str(user_decision).lower().strip()
+                is_approved = any(kw in decision_str for kw in ["approve", "yes", "y", "确认", "同意", "发送", "确定", "准许", "通过", "发吧", "好"])
+                is_rejected = any(kw in decision_str for kw in ["reject", "no", "n", "拒绝", "取消", "别发", "不发", "驳回", "停止", "算了"])
+
+                if not is_approved or is_rejected:
+                    logger.info(
+                        "email_sending_rejected_by_user",
+                        user_decision=decision_str,
+                        to_email=to_email,
+                    )
+                    return ToolMessage(
+                        content=(
+                            f"❌ 操作已取消：用户已人工拒绝或取消了本次邮件发送（用户指令: {user_decision}）。"
+                            "请向用户告知邮件未发出，并询问用户是否有其他修改建议或下一步安排。"
+                        ),
+                        name=tool_name,
+                        tool_call_id=tool_call["id"],
+                    )
+
+                logger.info(
+                    "email_sending_approved_by_user",
+                    user_decision=decision_str,
+                    to_email=to_email,
+                )
+
             try:
-                tool_instance = self.tools_by_name[tool_call["name"]]
-                tool_result = await tool_instance.ainvoke(tool_call["args"])
+                tool_instance = self.tools_by_name[tool_name]
+                tool_result = await tool_instance.ainvoke(tool_args)
                 str_result = str(tool_result)
             except Exception as e:
                 logger.warning(
                     "tool_execution_exception",
-                    name=tool_call["name"],
-                    args=tool_call.get("args"),
+                    name=tool_name,
+                    args=tool_args,
                     error=str(e),
                 )
-                str_result = f"工具 [{tool_call['name']}] 执行出错: {str(e)}。提示：如果缺少必要参数 (如 poiId/URL/关键词)，请尝试调整参数或更换其他匹配的工具。"
+                str_result = f"工具 [{tool_name}] 执行出错: {str(e)}。提示：如果缺少必要参数 (如 poiId/URL/关键词)，请尝试调整参数或更换其他匹配的工具。"
 
-            logger.info("tool_executed_result", name=tool_call["name"], result_snippet=str_result[:200])
+            logger.info("tool_executed_result", name=tool_name, result_snippet=str_result[:200])
             if len(str_result) > 4000:
                 str_result = str_result[:4000] + "...<tool_result_truncated>"
             return ToolMessage(
                 content=str_result,
-                name=tool_call["name"],
+                name=tool_name,
                 tool_call_id=tool_call["id"],
             )
 
@@ -367,9 +433,10 @@ class LangGraphAgent:
             # ainvoke 返回后再检查一次状态：图在本次执行中可能又遇到了 interrupt
             state = await graph.aget_state(config)
             if state.next:
-                interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
+                interrupt_value = state.tasks[0].interrupts[0].value if state.tasks and state.tasks[0].interrupts else "Waiting for input."
                 logger.info("图流程已中断等待用户输入", session_id=session_id, interrupt_value=str(interrupt_value))
-                return [Message(role="assistant", content=str(interrupt_value))]
+                content_text = interrupt_value.get("message", str(interrupt_value)) if isinstance(interrupt_value, dict) else str(interrupt_value)
+                return [Message(role="assistant", content=content_text)]
 
             openai_msgs = cast(list[dict], convert_to_openai_messages(response["messages"]))
             # 记忆投递至 Valkey/Redis Stream 解耦队列与防抖服务，主流程 1ms 内完成
@@ -377,9 +444,10 @@ class LangGraphAgent:
             return self.__process_messages(response["messages"])
         except GraphInterrupt:
             state = await graph.aget_state(config)
-            interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
+            interrupt_value = state.tasks[0].interrupts[0].value if state.tasks and state.tasks[0].interrupts else "Waiting for input."
             logger.info("图流程已中断等待用户输入", session_id=session_id, interrupt_value=str(interrupt_value))
-            return [Message(role="assistant", content=str(interrupt_value))]
+            content_text = interrupt_value.get("message", str(interrupt_value)) if isinstance(interrupt_value, dict) else str(interrupt_value)
+            return [Message(role="assistant", content=content_text)]
         except GraphRecursionError:
             logger.warning(
                 "graph_recursion_limit_exceeded",
@@ -475,21 +543,23 @@ class LangGraphAgent:
                     if text:
                         yield text
 
-            # 流式结束后检查是否触发了 interrupt（如 ask_human），有则把 interrupt 值作为最后一条消息推送
+            # 流式结束后检查是否触发了 interrupt（如 send_email 人机审批），有则把 interrupt 值作为最后一条消息推送
             state = await graph.aget_state(config)
             if state.next:
-                interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
+                interrupt_value = state.tasks[0].interrupts[0].value if state.tasks and state.tasks[0].interrupts else "Waiting for input."
                 logger.info("流式图流程已中断等待用户输入", session_id=session_id, interrupt_value=str(interrupt_value))
-                yield str(interrupt_value)
+                content_text = interrupt_value.get("message", str(interrupt_value)) if isinstance(interrupt_value, dict) else str(interrupt_value)
+                yield f"\n\n{content_text}"
             elif state.values and "messages" in state.values:
                 openai_msgs = cast(list[dict], convert_to_openai_messages(state.values["messages"]))
                 # 记忆投递至 Valkey/Redis Stream 解耦队列与防抖服务，主流程 1ms 内完成
                 asyncio.create_task(memory_queue_service.enqueue(user_id, openai_msgs, config.get("metadata")))
         except GraphInterrupt:
             state = await graph.aget_state(config)
-            interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
+            interrupt_value = state.tasks[0].interrupts[0].value if state.tasks and state.tasks[0].interrupts else "Waiting for input."
             logger.info("流式图流程已中断等待用户输入", session_id=session_id, interrupt_value=str(interrupt_value))
-            yield str(interrupt_value)
+            content_text = interrupt_value.get("message", str(interrupt_value)) if isinstance(interrupt_value, dict) else str(interrupt_value)
+            yield f"\n\n{content_text}"
         except GraphRecursionError:
             logger.warning(
                 "graph_recursion_limit_exceeded",

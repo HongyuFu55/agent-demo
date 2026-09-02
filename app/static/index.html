@@ -1760,6 +1760,23 @@
           }
         } else {
           parsedContent = marked.parse(msg.content || '');
+          // 🛡️ 人机协同审批确认交互卡片
+          if (msg.content && (msg.content.includes('【需要人工确认】') || msg.content.includes('human_approval_required'))) {
+            parsedContent += `
+              <div class="approval-action-card" style="margin-top: 0.9rem; padding: 0.75rem 0.9rem; background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(6, 182, 212, 0.4); border-radius: 8px; backdrop-filter: blur(8px);">
+                <div style="font-size: 0.82rem; color: #38bdf8; font-weight: bold; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
+                  <span>🛡️</span> 敏感操作审批决策
+                </div>
+                <div style="display: flex; gap: 0.6rem; align-items: center;">
+                  <button class="btn btn-primary" style="background: linear-gradient(135deg, #10b981, #059669); border: none; font-size: 0.8rem; padding: 0.35rem 0.85rem; cursor: pointer;" onclick="submitApprovalAction('确认发送')">
+                    ✅ 批准并发送
+                  </button>
+                  <button class="btn btn-danger" style="background: linear-gradient(135deg, #ef4444, #dc2626); border: none; font-size: 0.8rem; padding: 0.35rem 0.85rem; cursor: pointer;" onclick="submitApprovalAction('拒绝发送')">
+                    ❌ 拒绝发送
+                  </button>
+                </div>
+              </div>`;
+          }
         }
 
         return `
@@ -1902,6 +1919,14 @@
         }
       });
     });
+
+    // Human-in-the-Loop Approval Action Handler
+    function submitApprovalAction(actionText) {
+      const inputEl = document.getElementById('user-input');
+      if (!inputEl) return;
+      inputEl.value = actionText;
+      sendMessage();
+    }
 
     // KeyPress Handler
     function handleKeyPress(e) {
