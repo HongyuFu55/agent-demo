@@ -31,6 +31,7 @@ from app.core.middleware import (
     ProfilingMiddleware,
 )
 from app.core.observability import langfuse_init
+from app.mcp import get_mcp_asgi_app
 from app.services.database import database_service
 from app.services.memory import memory_service
 
@@ -200,10 +201,15 @@ static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-# 挂载工作区目录 (供前端预览与放大查看上传的图片与文档)
+# 挂载工作区目录供前端预览查看上传文件
 workspace_dir = Path(__file__).parent.parent / "storage" / "workspace"
 workspace_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/workspace", StaticFiles(directory=str(workspace_dir)), name="workspace")
+
+# 挂载 MCP Server 路由 (供外部 MCP 客户端通过 SSE/HTTP 连接)
+if settings.MCP_SERVER_ENABLED:
+    app.mount(settings.MCP_SERVER_PREFIX, get_mcp_asgi_app())
+    logger.info("mcp_server_mounted", prefix=settings.MCP_SERVER_PREFIX)
 
 
 @app.get("/test")
@@ -226,6 +232,7 @@ async def root(request: Request):
         "swagger_url": "/docs",
         "redoc_url": "/redoc",
         "test_url": "/test",
+        "mcp_sse_url": f"{settings.MCP_SERVER_PREFIX}/sse" if settings.MCP_SERVER_ENABLED else None,
     }
 
 

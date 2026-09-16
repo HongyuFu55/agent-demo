@@ -149,11 +149,17 @@ class Settings:
         self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
         self.DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
 
-        # MCP 工具配置
+        # MCP 工具（作为 Client 消费外部 MCP）配置
         # 高德地图 MCP：https://lbs.amap.com/api/mcp-server/summary
         # 申请地址：https://lbs.amap.com/dev/key/app
         self.AMAP_API_KEY = os.getenv("AMAP_API_KEY", "")
         self.AMAP_MCP_ENABLED = os.getenv("AMAP_MCP_ENABLED", "true").lower() in ("true", "1", "yes")
+
+        # MCP Server（作为 Server 对外暴露）配置
+        self.MCP_SERVER_ENABLED = os.getenv("MCP_SERVER_ENABLED", "true").lower() in ("true", "1", "yes")
+        self.MCP_SERVER_NAME = os.getenv("MCP_SERVER_NAME", "fastapi-langgraph-mcp")
+        self.MCP_SERVER_API_KEY = os.getenv("MCP_SERVER_API_KEY", "")
+        self.MCP_SERVER_PREFIX = os.getenv("MCP_SERVER_PREFIX", "/mcp")
 
         # 和风天气配置
         self.QWEATHER_KEY_ID = os.getenv("QWEATHER_KEY_ID", "")
