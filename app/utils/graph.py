@@ -8,15 +8,24 @@ from app.core.config import settings
 from app.core.logging import logger
 from app.schemas import Message
 
-# 在模块级缓存 tiktoken encoding，线程安全且可复用
+# 在模块级缓存 tiktoken encoding，线程安全且可复用；网络不可达时优雅降级为字数估算，避免阻断启动
 try:
     _TIKTOKEN_ENCODING = tiktoken.encoding_for_model(settings.DEFAULT_LLM_MODEL)
-except KeyError:
-    _TIKTOKEN_ENCODING = tiktoken.get_encoding("cl100k_base")
+except Exception:
+    try:
+        _TIKTOKEN_ENCODING = tiktoken.get_encoding("cl100k_base")
+    except Exception as e:
+        logger.warning("tiktoken_encoding_unavailable_fallback", error=str(e))
+        _TIKTOKEN_ENCODING = None
+
+
+def _estimate_tokens(text: str) -> int:
+    """粗略估算 token 数量（用于离线或无法联网下载 tiktoken 词表时的降级兜底）."""
+    return max(1, len(text) // 2)
 
 
 def _count_tokens_tiktoken(messages: list) -> int:
-    """使用 tiktoken 在本地统计 token，无需调用 API."""
+    """使用 tiktoken 在本地统计 token，词表不可达时平滑降级，确保永不崩溃."""
     num_tokens = 0
     for message in messages:
         # 每条消息都会有 role/name 的额外 token 开销
@@ -24,17 +33,42 @@ def _count_tokens_tiktoken(messages: list) -> int:
         if isinstance(message, dict):
             for _, value in message.items():
                 if isinstance(value, str):
-                    num_tokens += len(_TIKTOKEN_ENCODING.encode(value))
+                    if _TIKTOKEN_ENCODING is not None:
+                        try:
+                            num_tokens += len(_TIKTOKEN_ENCODING.encode(value))
+                        except Exception:
+                            num_tokens += _estimate_tokens(value)
+                    else:
+                        num_tokens += _estimate_tokens(value)
         elif isinstance(message, BaseMessage):
             content = message.content
             if isinstance(content, str):
-                num_tokens += len(_TIKTOKEN_ENCODING.encode(content))
+                if _TIKTOKEN_ENCODING is not None:
+                    try:
+                        num_tokens += len(_TIKTOKEN_ENCODING.encode(content))
+                    except Exception:
+                        num_tokens += _estimate_tokens(content)
+                else:
+                    num_tokens += _estimate_tokens(content)
             elif isinstance(content, list):
                 for block in content:
                     if isinstance(block, str):
-                        num_tokens += len(_TIKTOKEN_ENCODING.encode(block))
+                        if _TIKTOKEN_ENCODING is not None:
+                            try:
+                                num_tokens += len(_TIKTOKEN_ENCODING.encode(block))
+                            except Exception:
+                                num_tokens += _estimate_tokens(block)
+                        else:
+                            num_tokens += _estimate_tokens(block)
                     elif isinstance(block, dict) and "text" in block:
-                        num_tokens += len(_TIKTOKEN_ENCODING.encode(block["text"]))
+                        text_val = block["text"]
+                        if _TIKTOKEN_ENCODING is not None:
+                            try:
+                                num_tokens += len(_TIKTOKEN_ENCODING.encode(text_val))
+                            except Exception:
+                                num_tokens += _estimate_tokens(text_val)
+                        else:
+                            num_tokens += _estimate_tokens(text_val)
     num_tokens += 2  # every reply is primed with assistant
     return num_tokens
 

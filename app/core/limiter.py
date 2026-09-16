@@ -49,12 +49,30 @@ def get_user_id(request: Request) -> str:
     # 未登录请求降级为 IP 限流兜底
     return get_remote_address(request)
 
-# 如果配置了 Valkey，则构建分布式存储 URI
+# 如果配置了 Valkey，则构建分布式存储 URI，并加入超时保护与主动健康探测，避免异常时挂起全局请求
 _storage_uri = None
 if settings.VALKEY_HOST:
-    _password_part = f":{settings.VALKEY_PASSWORD}@" if settings.VALKEY_PASSWORD else ""
-    _storage_uri = f"redis://{_password_part}{settings.VALKEY_HOST}:{settings.VALKEY_PORT}/{settings.VALKEY_DB}"
-    logger.info("限流存储已连接 Valkey", host=settings.VALKEY_HOST, port=settings.VALKEY_PORT)
+    try:
+        import redis
+
+        _test_r = redis.Redis(
+            host=settings.VALKEY_HOST,
+            port=settings.VALKEY_PORT,
+            db=settings.VALKEY_DB,
+            password=settings.VALKEY_PASSWORD or None,
+            socket_timeout=1.0,
+            socket_connect_timeout=1.0,
+        )
+        _test_r.ping()
+        _password_part = f":{settings.VALKEY_PASSWORD}@" if settings.VALKEY_PASSWORD else ""
+        _storage_uri = (
+            f"redis://{_password_part}{settings.VALKEY_HOST}:{settings.VALKEY_PORT}/{settings.VALKEY_DB}"
+            f"?socket_timeout=1.0&socket_connect_timeout=1.0"
+        )
+        logger.info("限流存储已连接 Valkey", host=settings.VALKEY_HOST, port=settings.VALKEY_PORT)
+    except Exception as e:
+        logger.warning("valkey_unreachable_fallback_memory", error=str(e), hint="降级为本地进程内存存储限流")
+        _storage_uri = None
 
 # 初始化限流器
 # 当前：按用户 ID 限流，每个登录用户独立计数

@@ -32,7 +32,7 @@ from app.schemas.auth import (
     UserCreate,
     UserResponse,
 )
-from app.services.database import DatabaseService
+from app.services.database import database_service as db_service
 from app.utils.auth import (
     create_access_token,
     verify_token,
@@ -46,8 +46,6 @@ from app.utils.sanitization import (
 router = APIRouter()
 # 这是 FastAPI 提供的认证依赖工具。它的作用是：从请求头里读取 Bearer Token。
 security = HTTPBearer()
-# 这是创建数据库服务对象。（作者自己创建）所以这里先创建一个 DatabaseService 实例，后面的函数复用它。 负责操作数据库里的用户和 session。
-db_service = DatabaseService()
 
 
 async def get_current_user(

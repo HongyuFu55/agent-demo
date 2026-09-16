@@ -408,12 +408,20 @@
       width: 100%;
     }
 
+    .msg-row-user {
+      align-items: flex-end;
+    }
+
+    .msg-row-assistant {
+      align-items: flex-start;
+    }
+
     .msg-bubble {
       max-width: 85%;
-      padding: 0.85rem 1.1rem;
+      padding: 0.85rem 1.15rem;
       border-radius: var(--radius-md);
-      font-size: 0.9rem;
-      line-height: 1.6;
+      font-size: 0.92rem;
+      line-height: 1.65;
       word-break: break-word;
     }
 
@@ -422,38 +430,408 @@
       background: var(--accent-gradient);
       color: #fff;
       border-bottom-right-radius: 4px;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.25);
     }
 
-    .msg-assistant {
-      align-self: flex-start;
-      background: var(--bg-secondary);
+    /* Gemini Web Style Assistant Message Container */
+    .gemini-msg-container {
+      display: flex;
+      gap: 0.85rem;
+      width: 100%;
+      align-items: flex-start;
+    }
+
+    .gemini-avatar-col {
+      flex-shrink: 0;
+      padding-top: 0.2rem;
+    }
+
+    .gemini-sparkle-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(14, 22, 42, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .gemini-sparkle-avatar.generating {
+      border-color: rgba(155, 114, 207, 0.65);
+      box-shadow: 0 0 18px rgba(155, 114, 207, 0.45), inset 0 0 8px rgba(66, 133, 244, 0.3);
+    }
+
+    .gemini-sparkle-svg {
+      width: 18px;
+      height: 18px;
+      transition: transform 0.4s ease;
+    }
+
+    .gemini-sparkle-avatar.generating .gemini-sparkle-svg {
+      animation: geminiSpin 2.5s linear infinite;
+    }
+
+    @keyframes geminiSpin {
+      0% { transform: rotate(0deg) scale(0.95); }
+      50% { transform: rotate(180deg) scale(1.18); }
+      100% { transform: rotate(360deg) scale(0.95); }
+    }
+
+    .gemini-msg-body {
+      flex: 1;
+      min-width: 0;
+      background: rgba(14, 22, 42, 0.55);
       border: 1px solid var(--glass-border);
-      border-bottom-left-radius: 4px;
+      border-radius: var(--radius-md);
+      padding: 1rem 1.25rem;
+      position: relative;
+      transition: border-color 0.25s, box-shadow 0.25s;
     }
 
-    /* Markdown inside Assistant Bubble */
-    .msg-assistant p { margin-bottom: 0.5rem; }
-    .msg-assistant p:last-child { margin-bottom: 0; }
-    .msg-assistant pre {
+    .gemini-msg-body.generating {
+      border-color: rgba(99, 102, 241, 0.35);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    }
+
+    /* Markdown inside Gemini Assistant Bubble */
+    .gemini-msg-body p { margin-bottom: 0.65rem; }
+    .gemini-msg-body p:last-child { margin-bottom: 0; }
+    .gemini-msg-body ul, .gemini-msg-body ol { margin: 0.5rem 0 0.8rem 1.4rem; }
+    .gemini-msg-body li { margin-bottom: 0.25rem; }
+    .gemini-msg-body table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0.8rem 0;
+      font-size: 0.85rem;
+    }
+    .gemini-msg-body th, .gemini-msg-body td {
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+    }
+    .gemini-msg-body th {
+      background: rgba(255, 255, 255, 0.05);
+      color: #38bdf8;
+      font-weight: 600;
+    }
+    .gemini-msg-body tr:nth-child(even) {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Modern Gemini-styled Code Block with Header & Copy */
+    .code-block-wrapper {
+      position: relative;
+      margin: 0.85rem 0;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.1);
       background: #0d1117;
-      padding: 0.75rem;
-      border-radius: var(--radius-sm);
-      overflow-x: auto;
-      margin: 0.5rem 0;
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-      border: 1px solid var(--glass-border);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
     }
-    .msg-assistant code {
+
+    .code-block-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.4rem 0.85rem;
+      background: rgba(255, 255, 255, 0.04);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 0.72rem;
+      color: var(--text-muted);
       font-family: var(--font-mono);
-      background: rgba(255, 255, 255, 0.1);
-      padding: 0.15rem 0.3rem;
+    }
+
+    .code-lang-tag {
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 700;
+      color: var(--accent-cyan);
+    }
+
+    .code-copy-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.72rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 2px 7px;
       border-radius: 4px;
-      font-size: 0.82rem;
+      transition: all 0.15s;
     }
-    .msg-assistant pre code {
+
+    .code-copy-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .gemini-msg-body pre {
+      background: transparent;
+      padding: 0.85rem;
+      margin: 0;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+
+    .gemini-msg-body code {
+      font-family: var(--font-mono);
+      background: rgba(255, 255, 255, 0.08);
+      padding: 0.15rem 0.35rem;
+      border-radius: 4px;
+      font-size: 0.83rem;
+    }
+
+    .gemini-msg-body pre code {
       background: none;
       padding: 0;
+    }
+
+    /* Gemini Thinking Process Accordion Card */
+    .gemini-thinking-card {
+      margin-bottom: 0.95rem;
+      background: rgba(10, 16, 32, 0.75);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .gemini-thinking-card.active {
+      border-color: rgba(155, 114, 207, 0.4);
+      background: rgba(15, 23, 42, 0.8);
+    }
+
+    .gemini-shimmer-bar {
+      height: 2px;
+      width: 100%;
+      background: linear-gradient(90deg, transparent, #4285F4, #9B72CF, #D96570, transparent);
+      background-size: 200% 100%;
+      animation: geminiShimmer 2s infinite linear;
+    }
+
+    @keyframes geminiShimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+
+    .gemini-thinking-header {
+      padding: 0.55rem 0.9rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      transition: background 0.15s;
+    }
+
+    .gemini-thinking-header:hover {
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-main);
+    }
+
+    .thinking-title-left {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-weight: 600;
+    }
+
+    .thinking-icon-sparkle {
+      color: #9B72CF;
+      font-size: 0.95rem;
+    }
+
+    .thinking-timer-pill {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      padding: 1px 7px;
+      border-radius: 99px;
+      background: rgba(155, 114, 207, 0.15);
+      color: #c4b5fd;
+      border: 1px solid rgba(155, 114, 207, 0.3);
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .thinking-chevron {
+      transition: transform 0.25s ease;
+      font-size: 0.72rem;
+      color: var(--text-dim);
+    }
+
+    .gemini-thinking-card.collapsed .thinking-chevron {
+      transform: rotate(-90deg);
+    }
+
+    .gemini-thinking-card.collapsed .gemini-thinking-body {
+      display: none;
+    }
+
+    .gemini-thinking-body {
+      padding: 0.5rem 0.9rem 0.75rem 0.9rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      font-size: 0.8rem;
+    }
+
+    .gemini-tool-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      padding: 0.45rem 0.65rem;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      transition: all 0.2s;
+    }
+
+    .gemini-tool-step.running {
+      border-color: rgba(6, 182, 212, 0.35);
+      background: rgba(6, 182, 212, 0.06);
+    }
+
+    .gemini-tool-step.done {
+      border-color: rgba(16, 185, 129, 0.2);
+    }
+
+    /* Gemini Stream Pulsing Cursor */
+    .gemini-stream-cursor {
+      display: inline-block;
+      width: 4px;
+      height: 1.15em;
+      vertical-align: -0.15em;
+      margin-left: 4px;
+      border-radius: 2px;
+      background: linear-gradient(180deg, #4285F4, #9B72CF);
+      box-shadow: 0 0 10px rgba(66, 133, 244, 0.85);
+      animation: geminiCursorBlink 0.9s infinite ease-in-out;
+    }
+
+    @keyframes geminiCursorBlink {
+      0%, 100% { opacity: 1; transform: scaleY(1); }
+      50% { opacity: 0.15; transform: scaleY(0.85); }
+    }
+
+    /* Gemini Bottom Action Bar */
+    .gemini-action-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      margin-top: 0.9rem;
+      padding-top: 0.6rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      opacity: 0.85;
+      transition: opacity 0.2s;
+    }
+
+    .gemini-action-bar:hover {
+      opacity: 1;
+    }
+
+    .gemini-action-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 0.3rem 0.55rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.78rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      transition: all 0.15s;
+      user-select: none;
+    }
+
+    .gemini-action-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+    }
+
+    .gemini-action-btn.active {
+      color: var(--accent-cyan);
+      background: rgba(6, 182, 212, 0.12);
+    }
+
+    /* Global Gemini Toast Notification */
+    .gemini-global-toast {
+      position: fixed;
+      bottom: 85px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(155, 114, 207, 0.4);
+      color: #fff;
+      padding: 0.5rem 1.25rem;
+      border-radius: 99px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55), 0 0 18px rgba(155, 114, 207, 0.35);
+      backdrop-filter: blur(12px);
+      pointer-events: none;
+      opacity: 0;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 10000;
+    }
+
+    .gemini-global-toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* Stop Stream Button (Transform from Send Button) */
+    .btn-stop-stream {
+      background: rgba(244, 63, 94, 0.15);
+      border: 1px solid rgba(244, 63, 94, 0.5);
+      color: #fda4af;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      height: 48px;
+      padding: 0 1.1rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      position: relative;
+      animation: stopBtnPulse 2s infinite ease-in-out;
+      transition: all 0.2s;
+    }
+
+    .btn-stop-stream:hover {
+      background: rgba(244, 63, 94, 0.3);
+      border-color: #f43f5e;
+      color: #fff;
+      box-shadow: 0 0 18px rgba(244, 63, 94, 0.4);
+    }
+
+    .stop-icon-box {
+      font-size: 0.85rem;
+      line-height: 1;
+      background: #f43f5e;
+      color: #fff;
+      width: 16px;
+      height: 16px;
+      border-radius: 3px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    @keyframes stopBtnPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.45); }
+      50% { box-shadow: 0 0 0 7px rgba(244, 63, 94, 0); }
     }
 
     /* Chat Input Box (Fixed at bottom) */
@@ -936,7 +1314,7 @@
           <button type="button" class="btn-attach" onclick="triggerFileUpload()" title="上传图片或数据文件 (或直接粘贴/拖拽文件)">📎</button>
           
           <textarea id="user-input" class="chat-textarea" placeholder="输入问题发送给 Agent (支持 Enter 发送, 直接粘贴图片 Ctrl+V 或拖拽文件)..." oninput="autoResizeTextarea(this)" onkeydown="handleKeyPress(event)"></textarea>
-          <button class="btn btn-primary" onclick="sendMessage()" style="padding: 0.7rem 1.2rem; height: 48px;">发送</button>
+          <button id="btn-send-main" class="btn btn-primary" onclick="sendMessage()" style="padding: 0.7rem 1.2rem; height: 48px;">发送</button>
         </div>
       </div>
     </main>
@@ -1405,16 +1783,77 @@
       }
     }
 
-    // Init Marked.js & Highlight.js
+    // Init Marked.js & Highlight.js with Gemini Code Card
+    const customRenderer = new marked.Renderer();
+    customRenderer.code = function(arg1, arg2) {
+      const code = (typeof arg1 === 'object' && arg1 !== null) ? (arg1.text || '') : (arg1 || '');
+      const lang = (typeof arg1 === 'object' && arg1 !== null) ? (arg1.lang || '') : (arg2 || '');
+      const cleanLang = (lang || 'code').trim();
+      let highlighted = escapeHtml(code);
+      if (lang && typeof hljs !== 'undefined' && hljs.getLanguage(lang)) {
+        try {
+          highlighted = hljs.highlight(code, { language: lang }).value;
+        } catch (e) {}
+      } else if (typeof hljs !== 'undefined') {
+        try {
+          highlighted = hljs.highlightAuto(code).value;
+        } catch (e) {}
+      }
+
+      return `
+        <div class="code-block-wrapper">
+          <div class="code-block-header">
+            <span class="code-lang-tag">${escapeHtml(cleanLang)}</span>
+            <button type="button" class="code-copy-btn" onclick="copyCodeSnippet(this)">
+              <span>📋</span> 复制代码
+            </button>
+          </div>
+          <pre><code class="hljs language-${escapeHtml(cleanLang)}">${highlighted}</code></pre>
+        </div>
+      `;
+    };
+
     marked.setOptions({
-      highlight: function(code, lang) {
-        if (lang && hljs.getLanguage(lang)) {
-          return hljs.highlight(code, { language: lang }).value;
-        }
-        return hljs.highlightAuto(code).value;
-      },
+      renderer: customRenderer,
       breaks: true
     });
+
+    // Copy Code Snippet Helper
+    function copyCodeSnippet(btn) {
+      const wrapper = btn.closest('.code-block-wrapper');
+      if (!wrapper) return;
+      const codeEl = wrapper.querySelector('code');
+      const textToCopy = codeEl ? codeEl.innerText : '';
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<span>✓</span> 已复制!';
+        btn.style.color = '#34d399';
+        showGeminiToast('代码已成功复制到剪贴板 📋');
+        setTimeout(() => {
+          btn.innerHTML = originalHtml;
+          btn.style.color = '';
+        }, 2000);
+      }).catch(err => {
+        alert('复制失败: ' + err.message);
+      });
+    }
+
+    // Gemini Global Toast Helper
+    function showGeminiToast(msg) {
+      let toast = document.getElementById('gemini-global-toast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'gemini-global-toast';
+        toast.className = 'gemini-global-toast';
+        document.body.appendChild(toast);
+      }
+      toast.innerText = msg;
+      toast.classList.add('show');
+      clearTimeout(toast._timer);
+      toast._timer = setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2200);
+    }
 
     // On Load
     window.addEventListener('DOMContentLoaded', async () => {
@@ -1813,30 +2252,84 @@
             }
           }
         } else {
-          // 渲染工具执行时间轴 (Typed SSE tool steps)
-          let toolTimelineHtml = '';
-          if (msg.toolSteps && msg.toolSteps.length > 0) {
-            const chipsHtml = msg.toolSteps.map(step => {
-              const isRunning = step.status === 'running';
-              const durationText = step.durationMs ? `${step.durationMs}ms` : (isRunning ? '执行中' : '');
-              return `
-                <div class="agent-tool-chip ${isRunning ? 'running' : 'done'}" title="${escapeHtml(step.result || '')}">
-                  <span class="${isRunning ? 'tool-spinner' : ''}">${isRunning ? '⚙️' : '✓'}</span>
-                  <span>${escapeHtml(step.displayName || step.name)}</span>
-                  ${durationText ? `<span class="tool-duration">${durationText}</span>` : ''}
-                </div>`;
-            }).join('');
-            toolTimelineHtml = `<div class="agent-tool-timeline">${chipsHtml}</div>`;
+          // Gemini Assistant Message Layout
+          const isStreaming = msg.isStreaming === true;
+          const hasTools = msg.toolSteps && msg.toolSteps.length > 0;
+          const isThinking = isStreaming && (!msg.firstTokenTime || msg.toolSteps?.some(s => s.status === 'running'));
+          const isThinkingCollapsed = msg.thinkingCollapsed ? 'collapsed' : '';
+
+          // 1. Gemini Thinking Process Accordion Card
+          let thinkingCardHtml = '';
+          if (hasTools || isThinking) {
+            let elapsed = '0.0';
+            if (msg.thinkingDuration) {
+              elapsed = msg.thinkingDuration;
+            } else if (msg.thinkingEndTime && msg.thinkingStartTime) {
+              elapsed = ((msg.thinkingEndTime - msg.thinkingStartTime) / 1000).toFixed(1);
+            } else if (msg.thinkingStartTime) {
+              elapsed = ((Date.now() - msg.thinkingStartTime) / 1000).toFixed(1);
+            }
+
+            const headerTitle = isThinking
+              ? '<span class="thinking-title-left"><span class="thinking-icon-sparkle">✨</span> 思考与工具推理中...</span>'
+              : '<span class="thinking-title-left"><span class="thinking-icon-sparkle">✨</span> 深度思考过程</span>';
+
+            const timerPill = `<span class="thinking-timer-pill">${isThinking ? `思考中 ${elapsed}s` : `已思考 ${elapsed}s`}</span>`;
+
+            let toolStepsHtml = '';
+            if (hasTools) {
+              toolStepsHtml = msg.toolSteps.map(step => {
+                const isRunning = step.status === 'running';
+                const duration = step.durationMs ? `${step.durationMs}ms` : (isRunning ? '执行中...' : '');
+                let argsText = '';
+                if (step.args) {
+                  argsText = typeof step.args === 'object' ? JSON.stringify(step.args) : String(step.args);
+                }
+                return `
+                  <div class="gemini-tool-step ${isRunning ? 'running' : 'done'}">
+                    <span style="font-size: 0.95rem; line-height: 1;">${isRunning ? '⚙️' : '✓'}</span>
+                    <div style="flex: 1; min-width: 0;">
+                      <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
+                        <strong style="color: ${isRunning ? '#38bdf8' : '#34d399'}; font-size: 0.82rem;">${escapeHtml(step.displayName || step.name)}</strong>
+                        ${duration ? `<span class="agent-tool-chip ${isRunning ? 'running' : 'done'}" style="padding: 1px 6px; font-size: 0.65rem;">${duration}</span>` : ''}
+                      </div>
+                      ${argsText ? `<div style="color: var(--text-dim); font-size: 0.72rem; font-family: var(--font-mono); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(argsText)}">参数: ${escapeHtml(argsText)}</div>` : ''}
+                      ${step.result ? `<div style="color: var(--text-muted); font-size: 0.72rem; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(step.result)}">结果: ${escapeHtml(step.result)}</div>` : ''}
+                    </div>
+                  </div>`;
+              }).join('');
+            }
+
+            thinkingCardHtml = `
+              <div class="gemini-thinking-card ${isThinkingCollapsed} ${isThinking ? 'active' : ''}" id="gemini-thinking-${index}">
+                ${isThinking ? '<div class="gemini-shimmer-bar"></div>' : ''}
+                <div class="gemini-thinking-header" onclick="toggleThinkingAccordion(${index})">
+                  <div style="display: flex; align-items: center; gap: 0.6rem;">
+                    ${headerTitle}
+                    ${timerPill}
+                  </div>
+                  <span class="thinking-chevron">▼</span>
+                </div>
+                <div class="gemini-thinking-body">
+                  ${toolStepsHtml || '<div style="color: var(--text-dim); font-size: 0.75rem;">正在检索知识库与多路工具进行协同规划分析...</div>'}
+                </div>
+              </div>`;
           }
 
-          parsedContent = toolTimelineHtml + marked.parse(msg.content || '');
-          // 🛡️ 人机协同审批确认交互卡片
+          // 2. Markdown Parsing + Cursor
+          let textBodyHtml = marked.parse(msg.content || '');
+          if (isStreaming) {
+            textBodyHtml += '<span class="gemini-stream-cursor"></span>';
+          }
+
+          // 3. Human in the loop approval card
+          let approvalCardHtml = '';
           if (msg.content && (msg.content.includes('【需要人工确认】') || msg.content.includes('human_approval_required'))) {
             const isLatest = index === currentMessages.length - 1;
             if (msg.approvalHandled || !isLatest) {
               const statusText = msg.approvalHandled || '已处理';
               const isApproved = statusText.includes('确认') || statusText.includes('批准') || statusText.includes('同意') || statusText.includes('发送');
-              parsedContent += `
+              approvalCardHtml = `
                 <div style="margin-top: 0.85rem; padding: 0.5rem 0.85rem; background: rgba(15, 23, 42, 0.75); border: 1px solid ${isApproved ? 'rgba(16, 185, 129, 0.45)' : 'rgba(239, 68, 68, 0.45)'}; border-radius: 8px; display: inline-flex; align-items: center; gap: 0.5rem;">
                   <span style="font-size: 0.85rem; font-weight: 700; color: ${isApproved ? '#34d399' : '#f87171'};">
                     ${isApproved ? '✅ 决策结果：已批准并执行' : '❌ 决策结果：已拒绝取消'}
@@ -1844,7 +2337,7 @@
                   <span style="color: var(--text-muted); font-size: 0.75rem;">(审批已归档)</span>
                 </div>`;
             } else {
-              parsedContent += `
+              approvalCardHtml = `
                 <div class="approval-action-card" id="approval-card-${index}" style="margin-top: 0.95rem; padding: 0.9rem 1.1rem; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 10px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);">
                   <div style="font-size: 0.85rem; color: #38bdf8; font-weight: 700; margin-bottom: 0.7rem; display: flex; align-items: center; gap: 0.4rem;">
                     <span>🛡️</span> 人机协同审批决策
@@ -1860,16 +2353,206 @@
                 </div>`;
             }
           }
+
+          // 4. Gemini Web Action Bar (Copy, TTS Speak, Regenerate, Thumbs)
+          let actionBarHtml = '';
+          if (!isStreaming && msg.content) {
+            actionBarHtml = `
+              <div class="gemini-action-bar">
+                <button class="gemini-action-btn" onclick="copyMessageText(${index})" title="复制回复内容">
+                  <span>📋</span> 复制
+                </button>
+                <button class="gemini-action-btn" id="tts-btn-${index}" onclick="toggleSpeakMessage(${index}, this)" title="语音朗读">
+                  <span>🔊</span> 朗读
+                </button>
+                <button class="gemini-action-btn" onclick="regenerateLastMessage()" title="重新生成此条回答">
+                  <span>🔄</span> 重新生成
+                </button>
+                <div style="margin-left: auto; display: flex; gap: 0.2rem;">
+                  <button class="gemini-action-btn" onclick="this.classList.toggle('active')" title="好评 👍">👍</button>
+                  <button class="gemini-action-btn" onclick="this.classList.toggle('active')" title="差评 👎">👎</button>
+                </div>
+              </div>`;
+          }
+
+          return `
+            <div class="msg-row msg-row-assistant">
+              <div class="gemini-msg-container">
+                <div class="gemini-avatar-col">
+                  <div class="gemini-sparkle-avatar ${isStreaming ? 'generating' : ''}" title="Gemini AI 智能体">
+                    <svg class="gemini-sparkle-svg" viewBox="0 0 24 24" fill="none">
+                      <path d="M12 0C12 6.627 6.627 12 0 12C6.627 12 12 17.373 12 24C12 17.373 17.373 12 24 12C17.373 12 12 6.627 12 0Z" fill="url(#gemini-sparkle-gradient)" />
+                      <defs>
+                        <linearGradient id="gemini-sparkle-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stop-color="#4285F4" />
+                          <stop offset="50%" stop-color="#9B72CF" />
+                          <stop offset="100%" stop-color="#D96570" />
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                  </div>
+                </div>
+                <div class="gemini-msg-body ${isStreaming ? 'generating' : ''}">
+                  ${thinkingCardHtml}
+                  ${textBodyHtml}
+                  ${approvalCardHtml}
+                  ${actionBarHtml}
+                </div>
+              </div>
+            </div>`;
         }
 
         return `
-          <div class="msg-row">
-            <div class="msg-bubble ${isUser ? 'msg-user' : 'msg-assistant'}">${parsedContent}</div>
+          <div class="msg-row msg-row-user">
+            <div class="msg-bubble msg-user">${parsedContent}</div>
           </div>`;
       }).join('');
 
       scrollToBottom();
     }
+
+    // ==========================================
+    // Gemini Web Interactive Helper Functions
+    // ==========================================
+    let activeStreamAbortController = null;
+    let currentStreamReader = null;
+    let liveThinkingTimer = null;
+    let speakingMsgIndex = -1;
+
+    function toggleThinkingAccordion(index) {
+      const card = document.getElementById(`gemini-thinking-${index}`);
+      if (!card) return;
+      card.classList.toggle('collapsed');
+      if (currentMessages[index]) {
+        currentMessages[index].thinkingCollapsed = card.classList.contains('collapsed');
+      }
+    }
+
+    function copyMessageText(index) {
+      const msg = currentMessages[index];
+      if (!msg || !msg.content) return;
+      navigator.clipboard.writeText(msg.content).then(() => {
+        showGeminiToast('回答内容已成功复制到剪贴板 📋');
+      }).catch(err => {
+        alert('复制失败: ' + err.message);
+      });
+    }
+
+    function toggleSpeakMessage(index, btn) {
+      if (!('speechSynthesis' in window)) {
+        return alert('当前浏览器暂不支持语音合成朗读功能');
+      }
+      if (window.speechSynthesis.speaking && speakingMsgIndex === index) {
+        window.speechSynthesis.cancel();
+        speakingMsgIndex = -1;
+        btn.innerHTML = '<span>🔊</span> 朗读';
+        btn.classList.remove('active');
+        return;
+      }
+      window.speechSynthesis.cancel();
+      const msg = currentMessages[index];
+      if (!msg || !msg.content) return;
+      const cleanText = msg.content
+        .replace(/[#*`~_\[\]()>-]/g, ' ')
+        .replace(/\n+/g, '，');
+      const utter = new SpeechSynthesisUtterance(cleanText);
+      utter.lang = 'zh-CN';
+      utter.rate = 1.05;
+      utter.onend = () => {
+        btn.innerHTML = '<span>🔊</span> 朗读';
+        btn.classList.remove('active');
+        speakingMsgIndex = -1;
+      };
+      utter.onerror = () => {
+        btn.innerHTML = '<span>🔊</span> 朗读';
+        btn.classList.remove('active');
+        speakingMsgIndex = -1;
+      };
+      window.speechSynthesis.speak(utter);
+      speakingMsgIndex = index;
+      btn.innerHTML = '<span>⏹</span> 停止朗读';
+      btn.classList.add('active');
+    }
+
+    function regenerateLastMessage() {
+      if (activeStreamAbortController) return;
+      let lastUserIdx = -1;
+      for (let i = currentMessages.length - 1; i >= 0; i--) {
+        if (currentMessages[i].role === 'user') {
+          lastUserIdx = i;
+          break;
+        }
+      }
+      if (lastUserIdx === -1) return;
+      currentMessages = currentMessages.slice(0, lastUserIdx + 1);
+      renderMessages();
+      const isStream = document.getElementById('stream-mode').checked;
+      if (isStream) {
+        sendStreamMessage();
+      } else {
+        sendBlockingMessage();
+      }
+    }
+
+    function stopStreamGeneration() {
+      if (currentStreamReader) {
+        try {
+          currentStreamReader.cancel();
+        } catch (e) {}
+        currentStreamReader = null;
+      }
+      if (activeStreamAbortController) {
+        try {
+          activeStreamAbortController.abort();
+        } catch (e) {}
+        activeStreamAbortController = null;
+      }
+      if (liveThinkingTimer) {
+        clearInterval(liveThinkingTimer);
+        liveThinkingTimer = null;
+      }
+      const lastMsg = currentMessages[currentMessages.length - 1];
+      if (lastMsg && lastMsg.role === 'assistant') {
+        lastMsg.isStreaming = false;
+        lastMsg.thinkingEndTime = Date.now();
+        if (!lastMsg.content) {
+          lastMsg.content = '*(已停止响应)*';
+        } else {
+          lastMsg.content += '\n\n*(已由用户停止生成)*';
+        }
+      }
+      resetSendButton();
+      renderMessages();
+      const statusEl = document.getElementById('stream-status');
+      if (statusEl) statusEl.innerText = '⏹ 已由用户手动停止';
+      showGeminiToast('已停止流式响应 ⏹');
+    }
+
+    function updateSendButtonToStop() {
+      const btn = document.getElementById('btn-send-main');
+      if (!btn) return;
+      btn.className = 'btn-stop-stream';
+      btn.onclick = stopStreamGeneration;
+      btn.title = '停止响应 (Esc)';
+      btn.innerHTML = '<span class="stop-icon-box">■</span> <span>停止响应</span>';
+    }
+
+    function resetSendButton() {
+      const btn = document.getElementById('btn-send-main');
+      if (!btn) return;
+      btn.className = 'btn btn-primary';
+      btn.onclick = sendMessage;
+      btn.title = '发送 (Enter)';
+      btn.innerHTML = '发送';
+      btn.style.height = '48px';
+      btn.style.padding = '0.7rem 1.2rem';
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && activeStreamAbortController) {
+        stopStreamGeneration();
+      }
+    });
 
     // ==========================================
     // Attachment & File Upload Handling
@@ -2122,16 +2805,46 @@
       }
     }
 
-    // Send SSE Stream Message (支持 Typed SSE 标准事件帧)
+    // Send SSE Stream Message (支持 Gemini Web 思考动效与 Typed SSE 标准事件帧)
     async function sendStreamMessage() {
       const statusEl = document.getElementById('stream-status');
       statusEl.innerText = '⚡ Agent 思考与流式生成中...';
 
-      // Push placeholder assistant message
-      currentMessages.push({ role: 'assistant', content: '', toolSteps: [] });
+      // Push placeholder assistant message with Gemini thinking metadata
+      const startTime = Date.now();
+      currentMessages.push({
+        role: 'assistant',
+        content: '',
+        toolSteps: [],
+        isStreaming: true,
+        thinkingStartTime: startTime,
+        thinkingEndTime: null,
+        thinkingDuration: null,
+        firstTokenTime: null,
+        thinkingCollapsed: false
+      });
       const assistantMsgIdx = currentMessages.length - 1;
       renderMessages();
       scrollToBottom(true);
+
+      // 切换发送按钮为停止响应按钮
+      updateSendButtonToStop();
+      activeStreamAbortController = new AbortController();
+
+      // 启动思考实时计时器 (毫秒级跳动秒表，类似 Gemini Web 思考体验)
+      if (liveThinkingTimer) clearInterval(liveThinkingTimer);
+      liveThinkingTimer = setInterval(() => {
+        const msg = currentMessages[assistantMsgIdx];
+        if (!msg || !msg.isStreaming || msg.firstTokenTime) {
+          clearInterval(liveThinkingTimer);
+          liveThinkingTimer = null;
+          return;
+        }
+        // 动态更新思考秒表徽章
+        const timerPills = document.querySelectorAll(`#gemini-thinking-${assistantMsgIdx} .thinking-timer-pill`);
+        const curElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        timerPills.forEach(pill => { pill.innerText = `思考中 ${curElapsed}s`; });
+      }, 100);
 
       try {
         const response = await fetch(`${API_BASE}/chatbot/chat/stream`, {
@@ -2143,7 +2856,8 @@
           body: JSON.stringify({
             session_id: currentSessionId,
             messages: currentMessages.slice(0, -1) // Exclude empty placeholder
-          })
+          }),
+          signal: activeStreamAbortController.signal
         });
 
         if (!response.ok) {
@@ -2152,6 +2866,7 @@
         }
 
         const reader = response.body.getReader();
+        currentStreamReader = reader;
         const decoder = new TextDecoder();
         let accumulatedContent = '';
         let sseBuffer = '';
@@ -2220,6 +2935,16 @@
                   currentMessages[assistantMsgIdx].toolSteps = [...toolSteps];
                   statusEl.innerText = `✓ 工具 ${parsed.tool_display_name || toolName} 执行完毕`;
                 } else if (eventType === 'token') {
+                  // 记录首个 Token 到达时间点（思考结束 -> 正文流式生成）
+                  if (!currentMessages[assistantMsgIdx].firstTokenTime) {
+                    currentMessages[assistantMsgIdx].firstTokenTime = Date.now();
+                    currentMessages[assistantMsgIdx].thinkingEndTime = Date.now();
+                    currentMessages[assistantMsgIdx].thinkingDuration = ((Date.now() - startTime) / 1000).toFixed(1);
+                    if (liveThinkingTimer) {
+                      clearInterval(liveThinkingTimer);
+                      liveThinkingTimer = null;
+                    }
+                  }
                   if (parsed.content) {
                     accumulatedContent += parsed.content;
                     currentMessages[assistantMsgIdx].content = accumulatedContent;
@@ -2237,6 +2962,10 @@
                   statusEl.innerText = '✓ 生成完成';
                   toolSteps.forEach(t => { if (t.status === 'running') t.status = 'done'; });
                   currentMessages[assistantMsgIdx].toolSteps = [...toolSteps];
+                  if (!currentMessages[assistantMsgIdx].thinkingEndTime) {
+                    currentMessages[assistantMsgIdx].thinkingEndTime = Date.now();
+                    currentMessages[assistantMsgIdx].thinkingDuration = ((Date.now() - startTime) / 1000).toFixed(1);
+                  }
                 } else {
                   // 向后兼容基础文本
                   if (parsed.content) {
@@ -2254,9 +2983,26 @@
           }
         }
       } catch (err) {
-        currentMessages[assistantMsgIdx].content = `❌ 流式响应错误: ${err.message}`;
+        if (err.name !== 'AbortError') {
+          currentMessages[assistantMsgIdx].content = `❌ 流式响应错误: ${err.message}`;
+          statusEl.innerText = '流式请求异常';
+        }
+      } finally {
+        if (liveThinkingTimer) {
+          clearInterval(liveThinkingTimer);
+          liveThinkingTimer = null;
+        }
+        if (currentMessages[assistantMsgIdx]) {
+          currentMessages[assistantMsgIdx].isStreaming = false;
+          if (!currentMessages[assistantMsgIdx].thinkingEndTime) {
+            currentMessages[assistantMsgIdx].thinkingEndTime = Date.now();
+            currentMessages[assistantMsgIdx].thinkingDuration = ((Date.now() - startTime) / 1000).toFixed(1);
+          }
+        }
+        currentStreamReader = null;
+        activeStreamAbortController = null;
+        resetSendButton();
         renderMessages();
-        statusEl.innerText = '';
         scrollToBottom(true);
       }
     }
@@ -2338,7 +3084,8 @@
       if (currentToken) headers['Authorization'] = `Bearer ${currentToken}`;
 
       try {
-        const res = await fetch(`${API_BASE}/rag/stats`, { headers });
+        const signal = (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(2500) : undefined;
+        const res = await fetch(`${API_BASE}/rag/stats`, { headers, signal });
         if (res.ok) {
           const data = await res.json();
           rowsEl.innerText = `${data.row_count || 0} 条切片`;
@@ -2347,10 +3094,10 @@
         } else if (res.status === 401 || res.status === 403) {
           rowsEl.innerText = '请先登录以查看';
         } else {
-          rowsEl.innerText = '-- 条';
+          rowsEl.innerText = '-- 条 (Milvus未启动)';
         }
       } catch (err) {
-        rowsEl.innerText = '连接异常';
+        rowsEl.innerText = '-- 条 (离线/未启动)';
       }
     }
 
