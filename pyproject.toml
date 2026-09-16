@@ -58,6 +58,7 @@ dependencies = [
     "jieba>=0.42.1",
     "grpcio>=1.83.0",
     "pypdf>=5.0.0",
+    "rich>=15.0.0",
 ]
 
 # 可选依赖。
@@ -78,6 +79,7 @@ cache = ["redis>=7.4.0", "valkey[libvalkey]>=6.1.0"]
 dev = [
     "detect-secrets>=1.5.0",
     "pre-commit>=4.5.1",
+    "pyinstrument>=5.1.2",
     "pyright>=1.1.390",
     "ruff>=0.11.4",
 ]

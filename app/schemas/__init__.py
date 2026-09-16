@@ -9,6 +9,7 @@ from app.schemas.chat import (
     StreamResponse,
 )
 from app.schemas.graph import GraphState
+from app.schemas.sse import SSEEvent, SSEEventType
 
 __all__ = [
     "Token",
@@ -18,4 +19,6 @@ __all__ = [
     "Message",
     "StreamResponse",
     "GraphState",
+    "SSEEvent",
+    "SSEEventType",
 ]

@@ -203,8 +203,12 @@ class ProfilingMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # 启动性能、CPU 和内存分析
-        tracemalloc.start()
         cpu_start = time.process_time()
+        try:
+            if not tracemalloc.is_tracing():
+                tracemalloc.start()
+        except Exception:
+            pass
 
         profiler = Profiler(async_mode="enabled")
         with profiler:
@@ -212,9 +216,14 @@ class ProfilingMiddleware(BaseHTTPMiddleware):
 
         # 请求完成后立即采集指标
         cpu_ms = round((time.process_time() - cpu_start) * 1000, 2)
-        mem_current_kb, mem_peak_kb = (v // 1024 for v in tracemalloc.get_traced_memory())
-        snapshot = tracemalloc.take_snapshot()
-        tracemalloc.stop()
+        mem_current_kb, mem_peak_kb = 0, 0
+        snapshot = None
+        try:
+            if tracemalloc.is_tracing():
+                mem_current_kb, mem_peak_kb = (v // 1024 for v in tracemalloc.get_traced_memory())
+                snapshot = tracemalloc.take_snapshot()
+        except Exception:
+            pass
 
         wall_ms = round((profiler.last_session.duration if profiler.last_session else 0.0) * 1000, 2)
 

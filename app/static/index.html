@@ -586,10 +586,64 @@
       transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
     }
 
-    .chat-img-thumb:hover {
-      transform: scale(1.02);
-      border-color: var(--accent-cyan);
-      box-shadow: 0 6px 20px rgba(6, 182, 212, 0.3);
+    /* Agent Tool Timeline & Typed SSE Status Chips */
+    .agent-tool-timeline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.6rem;
+      border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+    }
+
+    .agent-tool-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      user-select: none;
+    }
+
+    .agent-tool-chip.running {
+      background: rgba(6, 182, 212, 0.12);
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      color: #38bdf8;
+      box-shadow: 0 0 12px rgba(6, 182, 212, 0.2);
+      animation: chipPulse 1.8s infinite ease-in-out;
+    }
+
+    .agent-tool-chip.done {
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #34d399;
+    }
+
+    .agent-tool-chip .tool-spinner {
+      display: inline-block;
+      animation: spin 1.2s linear infinite;
+    }
+
+    .agent-tool-chip .tool-duration {
+      font-size: 0.65rem;
+      opacity: 0.75;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    @keyframes chipPulse {
+      0%, 100% { opacity: 0.85; border-color: rgba(6, 182, 212, 0.35); }
+      50% { opacity: 1; border-color: rgba(6, 182, 212, 0.7); box-shadow: 0 0 16px rgba(6, 182, 212, 0.35); }
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
     }
 
     .chat-textarea {
@@ -1759,7 +1813,23 @@
             }
           }
         } else {
-          parsedContent = marked.parse(msg.content || '');
+          // 渲染工具执行时间轴 (Typed SSE tool steps)
+          let toolTimelineHtml = '';
+          if (msg.toolSteps && msg.toolSteps.length > 0) {
+            const chipsHtml = msg.toolSteps.map(step => {
+              const isRunning = step.status === 'running';
+              const durationText = step.durationMs ? `${step.durationMs}ms` : (isRunning ? '执行中' : '');
+              return `
+                <div class="agent-tool-chip ${isRunning ? 'running' : 'done'}" title="${escapeHtml(step.result || '')}">
+                  <span class="${isRunning ? 'tool-spinner' : ''}">${isRunning ? '⚙️' : '✓'}</span>
+                  <span>${escapeHtml(step.displayName || step.name)}</span>
+                  ${durationText ? `<span class="tool-duration">${durationText}</span>` : ''}
+                </div>`;
+            }).join('');
+            toolTimelineHtml = `<div class="agent-tool-timeline">${chipsHtml}</div>`;
+          }
+
+          parsedContent = toolTimelineHtml + marked.parse(msg.content || '');
           // 🛡️ 人机协同审批确认交互卡片
           if (msg.content && (msg.content.includes('【需要人工确认】') || msg.content.includes('human_approval_required'))) {
             const isLatest = index === currentMessages.length - 1;
@@ -2052,13 +2122,13 @@
       }
     }
 
-    // Send SSE Stream Message
+    // Send SSE Stream Message (支持 Typed SSE 标准事件帧)
     async function sendStreamMessage() {
       const statusEl = document.getElementById('stream-status');
       statusEl.innerText = '⚡ Agent 思考与流式生成中...';
 
       // Push placeholder assistant message
-      currentMessages.push({ role: 'assistant', content: '' });
+      currentMessages.push({ role: 'assistant', content: '', toolSteps: [] });
       const assistantMsgIdx = currentMessages.length - 1;
       renderMessages();
       scrollToBottom(true);
@@ -2084,32 +2154,101 @@
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let accumulatedContent = '';
+        let sseBuffer = '';
+        let currentEvent = 'token';
+        const toolSteps = [];
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
+          sseBuffer += decoder.decode(value, { stream: true });
+          const lines = sseBuffer.split('\n');
+          sseBuffer = lines.pop() || '';
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
+          for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line) {
+              currentEvent = 'token';
+              continue;
+            }
+
+            if (line.startsWith('event:')) {
+              currentEvent = line.substring(6).trim();
+              continue;
+            }
+
+            if (line.startsWith('data:')) {
               try {
-                const jsonStr = line.substring(6).trim();
+                const jsonStr = line.substring(5).trim();
                 if (!jsonStr) continue;
                 const parsed = JSON.parse(jsonStr);
+                const eventType = parsed.type || currentEvent;
 
-                if (parsed.content) {
-                  accumulatedContent += parsed.content;
+                if (eventType === 'tool_start') {
+                  const toolName = parsed.tool_name || 'unknown';
+                  const displayName = parsed.tool_display_name || toolName;
+                  let existing = toolSteps.find(t => t.name === toolName && t.status === 'running');
+                  if (!existing) {
+                    existing = {
+                      name: toolName,
+                      displayName: displayName,
+                      status: 'running',
+                      args: parsed.tool_args,
+                      startTime: Date.now()
+                    };
+                    toolSteps.push(existing);
+                  }
+                  currentMessages[assistantMsgIdx].toolSteps = [...toolSteps];
+                  statusEl.innerText = `⚙️ 正在调用工具: ${displayName}...`;
+                } else if (eventType === 'tool_end') {
+                  const toolName = parsed.tool_name || 'unknown';
+                  const target = toolSteps.find(t => t.name === toolName && t.status === 'running');
+                  if (target) {
+                    target.status = 'done';
+                    target.durationMs = parsed.duration_ms || (Date.now() - target.startTime);
+                    target.result = parsed.tool_result;
+                  } else {
+                    toolSteps.push({
+                      name: toolName,
+                      displayName: parsed.tool_display_name || toolName,
+                      status: 'done',
+                      durationMs: parsed.duration_ms || 100,
+                      result: parsed.tool_result
+                    });
+                  }
+                  currentMessages[assistantMsgIdx].toolSteps = [...toolSteps];
+                  statusEl.innerText = `✓ 工具 ${parsed.tool_display_name || toolName} 执行完毕`;
+                } else if (eventType === 'token') {
+                  if (parsed.content) {
+                    accumulatedContent += parsed.content;
+                    currentMessages[assistantMsgIdx].content = accumulatedContent;
+                  }
+                } else if (eventType === 'interrupt') {
+                  if (parsed.content) {
+                    accumulatedContent += (accumulatedContent ? '\n\n' : '') + parsed.content;
+                    currentMessages[assistantMsgIdx].content = accumulatedContent;
+                  }
+                } else if (eventType === 'error') {
+                  statusEl.innerText = `❌ ${parsed.content || '生成出错'}`;
+                  accumulatedContent += (accumulatedContent ? '\n\n' : '') + (parsed.content || '流式生成出错');
                   currentMessages[assistantMsgIdx].content = accumulatedContent;
-                  renderMessages();
-                  scrollToBottom();
-                }
-                if (parsed.done) {
+                } else if (eventType === 'done' || parsed.done) {
                   statusEl.innerText = '✓ 生成完成';
+                  toolSteps.forEach(t => { if (t.status === 'running') t.status = 'done'; });
+                  currentMessages[assistantMsgIdx].toolSteps = [...toolSteps];
+                } else {
+                  // 向后兼容基础文本
+                  if (parsed.content) {
+                    accumulatedContent += parsed.content;
+                    currentMessages[assistantMsgIdx].content = accumulatedContent;
+                  }
                 }
+
+                renderMessages();
+                scrollToBottom();
               } catch (e) {
-                console.error('Error parsing SSE line', e);
+                console.error('Error parsing SSE line', e, line);
               }
             }
           }

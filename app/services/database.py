@@ -16,10 +16,7 @@ from sqlmodel import (
     select,
 )
 
-from app.core.config import (
-    Environment,
-    settings,
-)
+from app.core.config import settings
 from app.core.logging import logger
 from app.models.chat_message import ChatMessage
 from app.models.session import Session as ChatSession
@@ -62,9 +59,6 @@ class DatabaseService:
             logger.info("数据库连接池已初始化并完成数据表建表检查", pool_size=pool_size, max_overflow=max_overflow)
         except SQLAlchemyError as e:
             logger.error("database_initialization_error", error=str(e), environment=settings.ENVIRONMENT.value)
-            # 生产环境不抛出异常，允许应用在数据库异常时继续启动
-            if settings.ENVIRONMENT != Environment.PRODUCTION:
-                raise
 
     async def create_user(self, email: str, password: str, username: str | None = None) -> User:
         """创建新用户.

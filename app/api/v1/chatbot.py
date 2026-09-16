@@ -3,8 +3,6 @@
 本模块提供普通聊天、流式聊天、消息历史查询和聊天历史清理接口。
 """
 
-import json
-import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -34,7 +32,10 @@ from app.schemas.chat import (
     ChatRequest,
     ChatResponse,
     Message,
-    StreamResponse,
+)
+from app.schemas.sse import (
+    SSEEvent,
+    SSEEventType,
 )
 from app.services.database import database_service
 from app.services.session_naming import maybe_name_session
@@ -170,37 +171,40 @@ async def chat_stream(
             maybe_name_session(session.id, session.name, chat_request.messages)
 
         async def event_generator():
-            """生成流式事件.
-
-            产出：
-                str: JSON 格式的 SSE 事件。
-
-            抛出：
-                Exception: 流式处理出错时抛出。
-            """
-            chunks: list[str] = []
+            """生成符合 W3C 规范的标准 Typed SSE 事件流."""
+            tokens: list[str] = []
+            has_done = False
             try:
                 with llm_stream_duration_seconds.labels(model=agent.llm_service.get_llm().get_name()).time():
-                    async for chunk in agent.get_stream_response(
+                    async for event in agent.get_stream_response(
                         chat_request.messages, session.id, user_id=str(session.user_id), username=session.username
                     ):
-                        chunks.append(chunk)
-                        response = StreamResponse(content=chunk, done=False)
-                        yield f"data: {json.dumps(response.model_dump(mode='json'))}\n\n"
+                        if event.event == SSEEventType.TOKEN:
+                            tokens.append(event.content)
+                        elif event.event == SSEEventType.DONE:
+                            has_done = True
+                        yield event.to_sse_packet()
 
+                # 若生成器因异常等未产出 done 事件，补发完成事件
+                if not has_done:
+                    done_event = SSEEvent(
+                        event=SSEEventType.DONE,
+                        type=SSEEventType.DONE.value,
+                        content="",
+                        done=True,
+                    )
+                    yield done_event.to_sse_packet()
+
+                # 将纯净的大模型回答落库（不含工具调用控制信令与状态占位符）
                 await database_service.create_chat_message(
                     session_id=session.id,
                     user_id=user.id,
                     question=get_latest_user_message(chat_request.messages),
-                    answer="".join(chunks),
+                    answer="".join(tokens),
                     metadata={"source": "chat_stream"},
                 )
 
                 logger.info("流式聊天请求处理完成", session_id=session.id, user_id=user.id)
-
-                # 发送最终消息，表示流式响应完成
-                final_response = StreamResponse(content="", done=True)
-                yield f"data: {json.dumps(final_response.model_dump(mode='json'))}\n\n"
 
             except Exception as e:
                 logger.exception(
@@ -208,10 +212,23 @@ async def chat_stream(
                     session_id=session.id,
                     error=str(e),
                 )
-                error_response = StreamResponse(content=str(e), done=True)
-                yield f"data: {json.dumps(error_response.model_dump(mode='json'))}\n\n"
+                error_event = SSEEvent(
+                    event=SSEEventType.ERROR,
+                    type=SSEEventType.ERROR.value,
+                    content=f"❌ 流式响应异常: {str(e)}",
+                    done=True,
+                )
+                yield error_event.to_sse_packet()
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     except HTTPException:
         raise

@@ -1,6 +1,7 @@
 """LangGraph 智能体/工作流以及与 LLM 交互的实现."""
 
 import asyncio
+import time
 from typing import (
     AsyncGenerator,
     Optional,
@@ -55,6 +56,8 @@ from app.core.prompts import load_system_prompt
 from app.schemas import (
     GraphState,
     Message,
+    SSEEvent,
+    SSEEventType,
 )
 from app.services.llm import llm_service
 from app.services.memory import memory_service
@@ -67,6 +70,30 @@ from app.utils import (
 )
 
 PostgresConnPool = AsyncConnectionPool[AsyncConnection[DictRow]]
+
+TOOL_DISPLAY_NAMES: dict[str, str] = {
+    "query_knowledge_base": "检索企业私有知识库",
+    "execute_python_code": "运行 Python 数据分析/代码执行",
+    "scrape_webpage": "抓取并解析网页正文",
+    "duckduckgo_search": "DuckDuckGo 网页搜索",
+    "send_email_notification": "发送邮件通知 (需人机审批)",
+    "analyze_image": "分析图片/视觉图表",
+    "calculator": "数值计算器",
+    "get_weather_now": "查询实时天气 (和风天气)",
+    "search_location_id": "查询城市地理编码 (和风天气)",
+    "maps_weather": "查询实时与预报天气 (高德地图)",
+    "execute_sql_query": "执行只读数据库查询",
+    "query_session_history": "查询历史对话记录",
+    "query_user_sessions": "查询用户会话列表",
+    "read_workspace_file": "读取工作区文件",
+    "write_workspace_file": "写入工作区文件",
+    "list_workspace_files": "浏览工作区目录",
+    "knowledge_search": "MCP 私有知识库检索",
+    "get_system_health": "MCP 系统健康探针",
+    "execute_calculator": "MCP 安全数学计算",
+    "query_order_summary": "MCP 订单数据汇总",
+}
+
 
 
 class LangGraphAgent:
@@ -468,8 +495,8 @@ class LangGraphAgent:
         session_id: str,
         user_id: Optional[str] = None,
         username: Optional[str] = None,
-    ) -> AsyncGenerator[str, None]:
-        """从 LLM 获取流式回复.
+    ) -> AsyncGenerator[SSEEvent, None]:
+        """从 LLM 获取标准 SSE 结构化事件流.
 
         参数：
             messages (list[Message]): 要发送给 LLM 的消息。
@@ -478,7 +505,7 @@ class LangGraphAgent:
             username (Optional[str]): 用户展示名称。
 
         产出：
-            str: LLM 响应中的 token。
+            SSEEvent: 结构化事件对象（包含 tool_start, tool_end, token, interrupt, done 等）。
         """
         callbacks: list[BaseCallbackHandler] = [langfuse_callback_handler] if settings.LANGFUSE_TRACING_ENABLED else []
         config: RunnableConfig = {
@@ -512,13 +539,14 @@ class LangGraphAgent:
                 graph_input = {"messages": [latest_user_message.model_dump()], "long_term_memory": relevant_memory}
 
             seen_tool_names: set[str] = set()
+            tool_start_times: dict[str, float] = {}
 
             async for token, _ in graph.astream(
                 graph_input,
                 config,
                 stream_mode="messages",
             ):
-                # 捕获工具调用 chunk，第一时间向前端透传状态 token，极大消除首字感知延迟
+                # 1. 捕获大模型输出块，当遇到工具调用时透传 TOOL_START 事件
                 if isinstance(token, (AIMessage, AIMessageChunk)):
                     tool_chunks = getattr(token, "tool_call_chunks", None)
                     if tool_chunks:
@@ -526,49 +554,116 @@ class LangGraphAgent:
                             name = chunk.get("name")
                             if name and name not in seen_tool_names:
                                 seen_tool_names.add(name)
-                                tool_display_names = {
-                                    "query_knowledge_base": "检索企业私有知识库",
-                                    "execute_python_code": "运行 Python 数据分析/爬虫代码",
-                                    "scrape_webpage": "抓取并解析网页正文",
-                                    "duckduckgo_search": "网络搜索",
-                                    "send_email_notification": "发送邮件通知",
-                                    "analyze_image": "分析图片/视觉图表",
-                                    "calculator": "数值计算",
-                                    "get_weather_now": "查询实时天气",
-                                }
-                                display_name = tool_display_names.get(name, name)
-                                yield f"\n\n⚙️ *[系统提示: 正在调用工具 `{display_name}` 处理中...]*\n\n"
+                                tool_start_times[name] = time.time()
+                                display_name = TOOL_DISPLAY_NAMES.get(name, name)
+                                raw_args = chunk.get("args")
+                                parsed_args = raw_args if raw_args else None
+                                yield SSEEvent(
+                                    event=SSEEventType.TOOL_START,
+                                    type=SSEEventType.TOOL_START.value,
+                                    tool_name=name,
+                                    tool_display_name=display_name,
+                                    tool_args=parsed_args,
+                                    tool_call_id=chunk.get("id"),
+                                    content="",
+                                    done=False,
+                                )
 
                     text = extract_text_content(token.content)
                     if text:
-                        yield text
+                        yield SSEEvent(
+                            event=SSEEventType.TOKEN,
+                            type=SSEEventType.TOKEN.value,
+                            content=text,
+                            done=False,
+                        )
 
-            # 流式结束后检查是否触发了 interrupt（如 send_email 人机审批），有则把 interrupt 值作为最后一条消息推送
+                # 2. 捕获工具节点执行完成消息，透传 TOOL_END 事件
+                elif isinstance(token, ToolMessage):
+                    name = token.name or "unknown_tool"
+                    start_t = tool_start_times.get(name, time.time())
+                    duration_ms = max(round((time.time() - start_t) * 1000, 1), 1.0)
+                    display_name = TOOL_DISPLAY_NAMES.get(name, name)
+                    raw_result = str(token.content)
+                    result_summary = raw_result[:200] + ("..." if len(raw_result) > 200 else "")
+                    yield SSEEvent(
+                        event=SSEEventType.TOOL_END,
+                        type=SSEEventType.TOOL_END.value,
+                        tool_name=name,
+                        tool_display_name=display_name,
+                        tool_call_id=token.tool_call_id,
+                        duration_ms=duration_ms,
+                        tool_result=result_summary,
+                        content="",
+                        done=False,
+                    )
+
+            # 流式结束后检查是否触发了 interrupt（如 send_email 人机审批）
             state = await graph.aget_state(config)
             if state.next:
-                interrupt_value = state.tasks[0].interrupts[0].value if state.tasks and state.tasks[0].interrupts else "Waiting for input."
+                interrupt_value = (
+                    state.tasks[0].interrupts[0].value
+                    if state.tasks and state.tasks[0].interrupts
+                    else "Waiting for input."
+                )
                 logger.info("流式图流程已中断等待用户输入", session_id=session_id, interrupt_value=str(interrupt_value))
                 content_text = interrupt_value.get("message", str(interrupt_value)) if isinstance(interrupt_value, dict) else str(interrupt_value)
-                yield f"\n\n{content_text}"
+                payload = interrupt_value if isinstance(interrupt_value, dict) else {"message": content_text}
+                yield SSEEvent(
+                    event=SSEEventType.INTERRUPT,
+                    type=SSEEventType.INTERRUPT.value,
+                    content=content_text,
+                    interrupt_payload=payload,
+                    done=False,
+                )
             elif state.values and "messages" in state.values:
                 openai_msgs = cast(list[dict], convert_to_openai_messages(state.values["messages"]))
                 # 记忆投递至 Valkey/Redis Stream 解耦队列与防抖服务，主流程 1ms 内完成
                 asyncio.create_task(memory_queue_service.enqueue(user_id, openai_msgs, config.get("metadata")))
+
+            yield SSEEvent(
+                event=SSEEventType.DONE,
+                type=SSEEventType.DONE.value,
+                content="",
+                done=True,
+            )
         except GraphInterrupt:
             state = await graph.aget_state(config)
-            interrupt_value = state.tasks[0].interrupts[0].value if state.tasks and state.tasks[0].interrupts else "Waiting for input."
+            interrupt_value = (
+                state.tasks[0].interrupts[0].value
+                if state.tasks and state.tasks[0].interrupts
+                else "Waiting for input."
+            )
             logger.info("流式图流程已中断等待用户输入", session_id=session_id, interrupt_value=str(interrupt_value))
             content_text = interrupt_value.get("message", str(interrupt_value)) if isinstance(interrupt_value, dict) else str(interrupt_value)
-            yield f"\n\n{content_text}"
+            payload = interrupt_value if isinstance(interrupt_value, dict) else {"message": content_text}
+            yield SSEEvent(
+                event=SSEEventType.INTERRUPT,
+                type=SSEEventType.INTERRUPT.value,
+                content=content_text,
+                interrupt_payload=payload,
+                done=False,
+            )
         except GraphRecursionError:
             logger.warning(
                 "graph_recursion_limit_exceeded",
                 session_id=session_id,
                 recursion_limit=settings.LANGGRAPH_RECURSION_LIMIT,
             )
-            yield "抱歉，这个问题需要的处理步骤过多，我无法完成。请尝试拆分问题或换一种方式提问。"
+            yield SSEEvent(
+                event=SSEEventType.ERROR,
+                type=SSEEventType.ERROR.value,
+                content="抱歉，这个问题需要的处理步骤过多，我无法完成。请尝试拆分问题或换一种方式提问。",
+                done=True,
+            )
         except Exception as stream_error:
             logger.exception("stream_processing_failed", error=str(stream_error), session_id=session_id)
+            yield SSEEvent(
+                event=SSEEventType.ERROR,
+                type=SSEEventType.ERROR.value,
+                content=f"流式生成异常: {str(stream_error)}",
+                done=True,
+            )
             raise stream_error
 
     async def get_chat_history(self, session_id: str) -> list[Message]:
