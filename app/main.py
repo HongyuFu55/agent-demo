@@ -107,9 +107,9 @@ app.add_middleware(LoggingContextMiddleware)
 # 把 session_id / user_id 注入到日志上下文，让这次请求的所有日志都自动带上这两个字段。
 app.add_middleware(MetricsMiddleware)
 
-# 仅在 DEBUG 模式下启用性能分析，慢请求会将 HTML 报告写入 /tmp
-if settings.DEBUG:
-    app.add_middleware(ProfilingMiddleware)
+# ProfilingMiddleware 会在并发请求或异步模式下导致 CPU 100% 锁死与内存泄漏，默认禁用
+# if settings.DEBUG:
+#     app.add_middleware(ProfilingMiddleware)
 
 app.add_middleware(CorrelationIdMiddleware)
 

@@ -105,6 +105,28 @@ This is a production-ready AI agent application built with:
 - Use `CompiledStateGraph` for production workflows
 - Implement `AsyncPostgresSaver` for checkpointing and persistence
 - Use `Command` for controlling graph flow between nodes
+- Use `interrupt()` from `langgraph.types` for Human-in-the-Loop sensitive tool execution
+- Always resume interrupted graphs via `Command(resume=...)` and validate user decision
+
+### Human-in-the-Loop & Security Guidelines
+- High-risk or irreversible tools (email sending, deletion, payment, code execution) must trigger `interrupt()` in `_tool_call`
+- Tool execution must be gated by explicit user approval keywords (e.g., "approve", "确认", "yes", "同意")
+- Never rely solely on LLM self-decision for safety-critical guardrails
+
+### Frontend UI & Interaction Rules
+- All action/approval buttons must implement debounce locks and immediate disabling upon click
+- Historical or finalized approval cards must render as read-only status badges, never interactive buttons
+- Buttons with colored/gradient backgrounds must explicitly set `color: #ffffff !important; font-weight: 700;`
+
+### Observability & Provisioning
+- Integrate Langfuse for LLM tracing on all agent operations
+- Export Prometheus metrics for API performance
+- Grafana dashboard JSON files for file-provisioning must place `title` and `panels` at the root object (no nested `dashboard` key)
+- Use structured logging with context binding (request_id, session_id, user_id)
+- Track LLM inference duration, token usage, and costs
+
+### Tooling & Network Guidelines
+- On Windows environments with proxies/VPNs, configure `git config --global http.sslBackend schannel` to avoid OpenSSL handshake failures
 
 ### Tracing
 - Use LangChain's `CallbackHandler` from Langfuse for tracing all LLM calls

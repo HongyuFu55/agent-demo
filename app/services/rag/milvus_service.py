@@ -1,6 +1,7 @@
 """Milvus 向量数据库底层操作封装，支持 HNSW 索引与标量过滤."""
 
 import asyncio
+import socket
 from typing import Any
 from urllib.parse import urlparse
 import structlog
@@ -10,15 +11,25 @@ logger = structlog.get_logger(__name__)
 
 
 async def _is_host_reachable_async(host: str, port: int, timeout: float = 1.0) -> bool:
-    """异步探测主机端口 TCP 连通性，不阻塞 asyncio 事件循环."""
+    """异步探测主机端口连通性.
+
+    使用 run_in_executor 将同步 socket 探测放入线程池执行。
+    asyncio.wait_for 超时后立即释放事件循环，不等待 DNS / TCP 线程完成，
+    彻底避免 gaierror / connect timeout 阻塞 Uvicorn 事件循环。
+    """
+    def _sync_probe() -> bool:
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                return True
+        except Exception:
+            return False
+
+    loop = asyncio.get_event_loop()
     try:
-        _, writer = await asyncio.wait_for(
-            asyncio.open_connection(host, port),
-            timeout=timeout,
+        return await asyncio.wait_for(
+            loop.run_in_executor(None, _sync_probe),
+            timeout=timeout + 0.5,  # 额外 0.5s 给线程池调度留余量
         )
-        writer.close()
-        await writer.wait_closed()
-        return True
     except Exception:
         return False
 
