@@ -1,6 +1,6 @@
 """Milvus 向量数据库底层操作封装，支持 HNSW 索引与标量过滤."""
 
-import socket
+import asyncio
 from typing import Any
 from urllib.parse import urlparse
 import structlog
@@ -9,11 +9,16 @@ from app.core.config import settings
 logger = structlog.get_logger(__name__)
 
 
-def _is_host_reachable(host: str, port: int, timeout: float = 0.5) -> bool:
-    """快速探测主机端口 TCP 连通性，避免 PyMilvus 注册不可达通道导致全局污染."""
+async def _is_host_reachable_async(host: str, port: int, timeout: float = 1.0) -> bool:
+    """异步探测主机端口 TCP 连通性，不阻塞 asyncio 事件循环."""
     try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port),
+            timeout=timeout,
+        )
+        writer.close()
+        await writer.wait_closed()
+        return True
     except Exception:
         return False
 
@@ -41,8 +46,8 @@ class MilvusService:
             pass
         self._client = None
 
-    def _get_client(self, force_refresh: bool = False):
-        """延迟懒加载 MilvusClient 实例，带多环境候选 URI 自动探测与失败冷却缓存."""
+    async def _get_client_async(self, force_refresh: bool = False):
+        """异步懒加载 MilvusClient 实例，带多环境候选 URI 自动探测与失败冷却缓存."""
         import time
 
         if not force_refresh and self._client is None and (time.time() - self._last_failed_probe_time < 30.0):
@@ -60,17 +65,16 @@ class MilvusService:
                 settings.milvus_uri,
                 "http://127.0.0.1:19530",
             ]
-            # 去重且保持顺序
-            seen = set()
-            unique_candidates = [c for c in candidates if not (c in seen or seen.add(c))]
+            seen: set[str] = set()
+            unique_candidates = [c for c in candidates if not (c in seen or seen.add(c))]  # type: ignore[func-returns-value]
 
-            # 先通过 TCP socket 探测出真正连通的 URI，避免 PyMilvus 尝试失败污染连接池
+            # 异步探测，不阻塞事件循环
             valid_uri = None
             for uri in unique_candidates:
                 parsed = urlparse(uri)
                 host = parsed.hostname or "localhost"
                 port = parsed.port or 19530
-                if _is_host_reachable(host, port, timeout=0.3):
+                if await _is_host_reachable_async(host, port, timeout=1.0):
                     valid_uri = uri
                     logger.info("探测到可用的 Milvus 节点", uri=uri, host=host, port=port)
                     break
@@ -80,8 +84,7 @@ class MilvusService:
                 logger.warning("milvus_node_unreachable", message="未探测到可用的 Milvus 节点，跳过连接初始化（冷却30秒）")
                 return None
 
-            target_uri = valid_uri
-            kwargs: dict[str, Any] = {"uri": target_uri}
+            kwargs: dict[str, Any] = {"uri": valid_uri}
             if settings.MILVUS_TOKEN:
                 kwargs["token"] = settings.MILVUS_TOKEN
             self._client = MilvusClient(**kwargs)
@@ -93,7 +96,7 @@ class MilvusService:
         if force_reconnect:
             self._reset_client()
 
-        client = self._client or self._get_client()
+        client = self._client
         if client is None:
             return
 
@@ -109,20 +112,7 @@ class MilvusService:
                 )
                 logger.info("Milvus 知识库 Collection 创建完毕", collection=self.collection_name)
         except Exception as e:
-            logger.warning("检查/创建 Milvus Collection 遇到异常，尝试重连并重新创建", error=str(e), collection=self.collection_name)
-            try:
-                self._reset_client()
-                client = self._get_client()
-                if client and not client.has_collection(self.collection_name):
-                    client.create_collection(
-                        collection_name=self.collection_name,
-                        dimension=self.dimension,
-                        metric_type="COSINE",
-                        consistency_level="Strong",
-                        auto_id=True,
-                    )
-            except Exception as inner_e:
-                logger.exception("二次创建 Milvus Collection 失败", error=str(inner_e))
+            logger.warning("检查/创建 Milvus Collection 遇到异常，跳过重试", error=str(e), collection=self.collection_name)
 
     async def insert_chunks(self, chunks: list[dict[str, Any]], batch_size: int = 100) -> int:
         """向 Milvus 批量分批插入文档切片与向量，支持大文档分批写入与自动保活.
@@ -133,7 +123,7 @@ class MilvusService:
             return 0
 
         self._ensure_collection()
-        client = self._get_client()
+        client = await self._get_client_async()
         if client is None:
             logger.warning("milvus_client_unavailable_skip_insert", message="Milvus 未连接，跳过切片写入")
             return 0
@@ -151,7 +141,7 @@ class MilvusService:
             except Exception as e:
                 logger.warning("Milvus 批量写入出现异常，强制重连重刷 Collection 缓存后重试", error=str(e), batch_index=i)
                 self._ensure_collection(force_reconnect=True)
-                client = self._client or self._get_client()
+                client = self._client
                 if client is None:
                     break
                 res = client.insert(collection_name=self.collection_name, data=batch)
@@ -172,7 +162,7 @@ class MilvusService:
     ) -> list[dict[str, Any]]:
         """执行带标量过滤的向量余弦近邻检索."""
         self._ensure_collection()
-        client = self._client or self._get_client()
+        client = await self._get_client_async()
         if client is None:
             logger.warning("milvus_client_unavailable_skip_search", message="Milvus 未连接，跳过向量检索")
             return []
@@ -200,7 +190,7 @@ class MilvusService:
         except Exception as e:
             logger.warning("Milvus 向量检索异常，尝试自动重建重连后重试", error=str(e))
             self._ensure_collection(force_reconnect=True)
-            client = self._client or self._get_client()
+            client = self._client
             if client is None:
                 return []
             try:
@@ -238,7 +228,7 @@ class MilvusService:
     async def delete_by_doc_id(self, doc_id: str) -> int:
         """根据文档 ID 删除指定文档的所有切片."""
         self._ensure_collection()
-        client = self._client or self._get_client()
+        client = await self._get_client_async()
         if client is None:
             logger.warning("milvus_client_unavailable_skip_delete", message="Milvus 未连接，跳过切片删除")
             return 0
@@ -251,7 +241,7 @@ class MilvusService:
         except Exception as e:
             logger.warning("删除文档切片异常，尝试重连重试", error=str(e), doc_id=doc_id)
             self._ensure_collection(force_reconnect=True)
-            client = self._client or self._get_client()
+            client = self._client
             if client is None:
                 return 0
             try:
@@ -262,7 +252,7 @@ class MilvusService:
 
     async def get_collection_stats(self) -> dict[str, Any]:
         """获取当前知识库的统计信息."""
-        client = self._client or self._get_client()
+        client = await self._get_client_async()
         if client is None:
             return {
                 "collection_name": self.collection_name,
@@ -279,7 +269,7 @@ class MilvusService:
         except Exception as e:
             logger.warning("获取集合统计信息异常，尝试重连刷新", error=str(e))
             self._ensure_collection(force_reconnect=True)
-            client = self._client or self._get_client()
+            client = self._client
             if client is None:
                 return {
                     "collection_name": self.collection_name,

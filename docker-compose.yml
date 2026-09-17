@@ -1,4 +1,4 @@
-version: '3.8'
+﻿version: '3.8'
 
 services:
   db:
@@ -19,25 +19,8 @@ services:
       retries: 5
     restart: always
     networks:
-      - monitoring
+      - app-network
 
-  # Valkey (Redis-compatible) cache — optional, set VALKEY_HOST=valkey in your .env to enable
-  # valkey:
-  #   image: valkey/valkey:8.1.6-alpine
-  #   ports:
-  #     - "6379:6379"
-  #   volumes:
-  #     - valkey-data:/data
-  #   healthcheck:
-  #     test: ["CMD", "valkey-cli", "ping"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #   restart: always
-  #   networks:
-  #     - monitoring
-
-  # Single API service with dynamic environment
   app:
     build:
       context: .
@@ -66,81 +49,75 @@ services:
       start_period: 10s
     restart: on-failure
     networks:
-      - monitoring
+      - app-network
 
-  # Independent Memory Worker service for async queue processing
-  memory-worker:
-    build:
-      context: .
-      args:
-        APP_ENV: ${APP_ENV:-development}
-    command: /app/.venv/bin/python -m scripts.run_memory_worker
-    volumes:
-      - ./app:/app/app
-      - ./logs:/app/logs
-      - ./storage:/app/storage
-    env_file:
-      - .env.${APP_ENV:-development}
-    environment:
-      - APP_ENV=${APP_ENV:-development}
-      - TZ=Asia/Shanghai
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: on-failure
-    networks:
-      - monitoring
+  # --- 以下为可选服务，按需取消注释 ---
 
-  # Prometheus
-  prometheus:
-    image: prom/prometheus:latest
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-    networks:
-      - monitoring
-    restart: always
-
-  # Grafana
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    volumes:
-      - grafana-storage:/var/lib/grafana
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./grafana/datasources:/etc/grafana/provisioning/datasources
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_DEFAULT_APP_LANGUAGE=zh-Hans
-      - GF_DATE_FORMATS_DEFAULT_TIMEZONE=Asia/Shanghai
-    networks:
-      - monitoring
-    restart: always
-
-  # cadvisor (Optional for Linux host; disabled on Windows host to prevent rootfs volume mount failure)
-  # cadvisor:
-  #   image: gcr.io/cadvisor/cadvisor:latest
-  #   ports:
-  #     - "8080:8080"
+  # memory-worker:
+  #   build:
+  #     context: .
+  #     args:
+  #       APP_ENV: ${APP_ENV:-development}
+  #   command: /app/.venv/bin/python -m scripts.run_memory_worker
   #   volumes:
-  #     - /:/rootfs:ro
-  #     - /var/run:/var/run:rw
-  #     - /sys:/sys:ro
-  #     - /var/lib/docker/:/var/lib/docker:ro
+  #     - ./app:/app/app
+  #     - ./logs:/app/logs
+  #   env_file:
+  #     - .env.${APP_ENV:-development}
+  #   environment:
+  #     - APP_ENV=${APP_ENV:-development}
+  #     - TZ=Asia/Shanghai
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   restart: on-failure
   #   networks:
-  #     - monitoring
+  #     - app-network
+
+  # valkey:
+  #   image: valkey/valkey:8.1.6-alpine
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - valkey-data:/data
+  #   healthcheck:
+  #     test: ["CMD", "valkey-cli", "ping"]
+  #   restart: always
+  #   networks:
+  #     - app-network
+
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+  #   command:
+  #     - '--config.file=/etc/prometheus/prometheus.yml'
+  #   networks:
+  #     - app-network
+  #   restart: always
+
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - grafana-storage:/var/lib/grafana
+  #     - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+  #     - ./grafana/datasources:/etc/grafana/provisioning/datasources
+  #   environment:
+  #     - GF_SECURITY_ADMIN_PASSWORD=admin
+  #     - GF_USERS_ALLOW_SIGN_UP=false
+  #   networks:
+  #     - app-network
   #   restart: always
 
 networks:
-  monitoring:
+  app-network:
     driver: bridge
 
 volumes:
-  grafana-storage:
   postgres-data:
-  valkey-data:
+  # valkey-data:
+  # grafana-storage:

@@ -222,6 +222,8 @@ class ProfilingMiddleware(BaseHTTPMiddleware):
             if tracemalloc.is_tracing():
                 mem_current_kb, mem_peak_kb = (v // 1024 for v in tracemalloc.get_traced_memory())
                 snapshot = tracemalloc.take_snapshot()
+                # 重置峰值，避免跨请求累积导致内存持续暴涨（OOM）
+                tracemalloc.reset_peak()
         except Exception:
             pass
 
@@ -244,7 +246,7 @@ class ProfilingMiddleware(BaseHTTPMiddleware):
                     "size_kb": round(stat.size / 1024, 2),
                     "count": stat.count,
                 }
-                for stat in snapshot.statistics("lineno")
+                for stat in (snapshot.statistics("lineno") if snapshot is not None else [])
                 if not any(ex in str(stat.traceback[0].filename) for ex in _excluded)
             ]
 
