@@ -169,6 +169,13 @@ class Settings:
         self.DASHSCOPE_BASE_URL = os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
         self.DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "gpt-5-mini")
         self.SESSION_NAMING_ENABLED = os.getenv("SESSION_NAMING_ENABLED", "true").lower() == "true"
+        # 会话事件日志开关。开启后每轮对话会写 session_event（影子写入），
+        # 可用 scripts/replay_session.py 校验投影与 chat_message 是否一致。
+        self.SESSION_EVENTS_ENABLED = os.getenv("SESSION_EVENTS_ENABLED", "true").lower() in ("true", "1", "yes")
+        # 读历史走哪条路：
+        #   projection   —— 从事件日志折叠（默认，M2 后的主路径）
+        #   chat_message —— 读旧消息表（出问题时可一键回退，不用改代码）
+        self.SESSION_EVENT_READ_SOURCE = os.getenv("SESSION_EVENT_READ_SOURCE", "projection").strip().lower()
         self.DEFAULT_LLM_TEMPERATURE = float(os.getenv("DEFAULT_LLM_TEMPERATURE", "0.2"))
         self.MAX_TOKENS = int(os.getenv("MAX_TOKENS", "2000"))
         self.MAX_LLM_CALL_RETRIES = int(os.getenv("MAX_LLM_CALL_RETRIES", "3"))

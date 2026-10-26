@@ -24,6 +24,11 @@ from app.core.prompts import SESSION_TITLE_PROMPT
 from app.models.session import Session as ChatSession
 from app.schemas.chat import SessionTitle
 from app.services.database import database_service
+from app.services.events import (
+    EventDraft,
+    EventType,
+    event_store,
+)
 from app.services.llm import llm_service
 
 _PLACEHOLDER_MAX = 40
@@ -67,6 +72,10 @@ async def _persist_session_name(session_id: str, user_message: str) -> None:
             temperature=0.3,
         )
         await database_service.update_session_name(session_id, result.title)
+        await event_store.append(
+            session_id,
+            [EventDraft(EventType.SESSION_RENAMED, {"name": result.title, "source": "auto"})],
+        )
         session_names_generated_total.labels(status="success").inc()
         logger.info("session_name_generated", session_id=session_id, name=result.title)
     except Exception:

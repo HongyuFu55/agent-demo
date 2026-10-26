@@ -15,6 +15,7 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     UploadFile,
 )
 from fastapi.responses import StreamingResponse
@@ -37,7 +38,14 @@ from app.schemas.sse import (
     SSEEvent,
     SSEEventType,
 )
+from app.services.chat_history import read_history
 from app.services.database import database_service
+from app.services.events import (
+    EventDraft,
+    EventType,
+    event_store,
+    record_turn,
+)
 from app.services.session_naming import maybe_name_session
 
 router = APIRouter()
@@ -121,14 +129,22 @@ async def chat(
         if settings.SESSION_NAMING_ENABLED:
             maybe_name_session(session.id, session.name, chat_request.messages)
 
-        result = await agent.get_response(
-            chat_request.messages, session.id, user_id=str(session.user_id), username=session.username
-        )
+        user_message = get_latest_user_message(chat_request.messages)
+
+        # 一轮对话 = 一组事件：turn/start → message/user → message/assistant → turn/end
+        async with record_turn(session_id=session.id, user_message=user_message, source="chat") as turn:
+            result = await agent.get_response(
+                chat_request.messages, session.id, user_id=str(session.user_id), username=session.username
+            )
+            answer = get_latest_assistant_message(result)
+            await turn.assistant(answer, model=agent.llm_service.get_llm().get_name())
+
+        # 影子写入：事件日志与 chat_message 暂时双写，用 replay_session.py --verify 比对一致性
         await database_service.create_chat_message(
             session_id=session.id,
             user_id=user.id,
-            question=get_latest_user_message(chat_request.messages),
-            answer=get_latest_assistant_message(result),
+            question=user_message,
+            answer=answer,
             metadata={"source": "chat"},
         )
 
@@ -174,51 +190,77 @@ async def chat_stream(
             """生成符合 W3C 规范的标准 Typed SSE 事件流."""
             tokens: list[str] = []
             has_done = False
-            try:
-                with llm_stream_duration_seconds.labels(model=agent.llm_service.get_llm().get_name()).time():
-                    async for event in agent.get_stream_response(
-                        chat_request.messages, session.id, user_id=str(session.user_id), username=session.username
-                    ):
-                        if event.event == SSEEventType.TOKEN:
-                            tokens.append(event.content)
-                        elif event.event == SSEEventType.DONE:
-                            has_done = True
-                        yield event.to_sse_packet()
+            model_name = agent.llm_service.get_llm().get_name()
+            user_message = get_latest_user_message(chat_request.messages)
 
-                # 若生成器因异常等未产出 done 事件，补发完成事件
-                if not has_done:
-                    done_event = SSEEvent(
-                        event=SSEEventType.DONE,
-                        type=SSEEventType.DONE.value,
-                        content="",
+            # 事件日志包住整轮：无论正常结束、异常还是断流，都会尝试写 turn/end
+            async with record_turn(
+                session_id=session.id, user_message=user_message, source="chat_stream"
+            ) as turn:
+                try:
+                    with llm_stream_duration_seconds.labels(model=model_name).time():
+                        async for event in agent.get_stream_response(
+                            chat_request.messages, session.id, user_id=str(session.user_id), username=session.username
+                        ):
+                            if event.event == SSEEventType.TOKEN:
+                                tokens.append(event.content)
+                            elif event.event == SSEEventType.TOOL_START:
+                                await turn.tool_started(
+                                    tool_call_id=event.tool_call_id,
+                                    name=event.tool_name or "unknown",
+                                    args=event.tool_args,
+                                )
+                            elif event.event == SSEEventType.TOOL_END:
+                                await turn.tool_finished(
+                                    tool_call_id=event.tool_call_id,
+                                    name=event.tool_name,
+                                    duration_ms=event.duration_ms,
+                                    result_preview=event.tool_result,
+                                )
+                            elif event.event == SSEEventType.INTERRUPT:
+                                turn.interrupted("human_approval_required")
+                            elif event.event == SSEEventType.DONE:
+                                has_done = True
+                            yield event.to_sse_packet()
+
+                    # 若生成器因异常等未产出 done 事件，补发完成事件
+                    if not has_done:
+                        done_event = SSEEvent(
+                            event=SSEEventType.DONE,
+                            type=SSEEventType.DONE.value,
+                            content="",
+                            done=True,
+                        )
+                        yield done_event.to_sse_packet()
+
+                    answer = "".join(tokens)
+                    await turn.assistant(answer, model=model_name)
+
+                    # 影子写入：事件日志与 chat_message 暂时双写
+                    await database_service.create_chat_message(
+                        session_id=session.id,
+                        user_id=user.id,
+                        question=user_message,
+                        answer=answer,
+                        metadata={"source": "chat_stream"},
+                    )
+
+                    logger.info("流式聊天请求处理完成", session_id=session.id, user_id=user.id)
+
+                except Exception as e:
+                    await turn.error(kind="stream_failure", message=str(e))
+                    logger.exception(
+                        "stream_chat_request_failed",
+                        session_id=session.id,
+                        error=str(e),
+                    )
+                    error_event = SSEEvent(
+                        event=SSEEventType.ERROR,
+                        type=SSEEventType.ERROR.value,
+                        content=f"❌ 流式响应异常: {str(e)}",
                         done=True,
                     )
-                    yield done_event.to_sse_packet()
-
-                # 将纯净的大模型回答落库（不含工具调用控制信令与状态占位符）
-                await database_service.create_chat_message(
-                    session_id=session.id,
-                    user_id=user.id,
-                    question=get_latest_user_message(chat_request.messages),
-                    answer="".join(tokens),
-                    metadata={"source": "chat_stream"},
-                )
-
-                logger.info("流式聊天请求处理完成", session_id=session.id, user_id=user.id)
-
-            except Exception as e:
-                logger.exception(
-                    "stream_chat_request_failed",
-                    session_id=session.id,
-                    error=str(e),
-                )
-                error_event = SSEEvent(
-                    event=SSEEventType.ERROR,
-                    type=SSEEventType.ERROR.value,
-                    content=f"❌ 流式响应异常: {str(e)}",
-                    done=True,
-                )
-                yield error_event.to_sse_packet()
+                    yield error_event.to_sse_packet()
 
         return StreamingResponse(
             event_generator(),
@@ -245,13 +287,19 @@ async def chat_stream(
 @limiter.limit(settings.RATE_LIMIT_ENDPOINTS["messages"][0])
 async def get_session_messages(
     request: Request,
+    response: Response,
     session_id: str = Query(..., description="聊天会话 ID"),
     user: User = Depends(get_current_user),
 ):
     """获取指定会话的所有消息.
 
+    自 M2 起，历史数据默认从事件日志的 messages 投影读出
+    （`SESSION_EVENT_READ_SOURCE=chat_message` 可回退到旧路径）。
+    响应头 `X-History-Source` 会标明本次数据来自投影还是兜底的消息表。
+
     参数：
         request: FastAPI 请求对象，用于限流。
+        response: FastAPI 响应对象，用于写入来源标记。
         session_id: 要读取的聊天会话 ID。
         user: 从登录 token 解析出的当前用户。
 
@@ -263,16 +311,17 @@ async def get_session_messages(
     """
     try:
         session = await get_owned_session(session_id, user)
-        chat_messages = await database_service.get_chat_messages(session.id, user.id)
-        messages = [
-            message
-            for chat_message in chat_messages
-            for message in [
-                Message(role="user", content=chat_message.question),
-                Message(role="assistant", content=chat_message.answer),
-            ]
-        ]
-        return ChatResponse(messages=messages)
+        history = await read_history(session.id, user.id)
+        response.headers["X-History-Source"] = history.source.value
+        logger.info(
+            "chat_history_read",
+            session_id=session.id,
+            user_id=user.id,
+            source=history.source.value,
+            message_count=len(history.messages),
+            event_count=history.event_count,
+        )
+        return ChatResponse(messages=history.messages)
     except HTTPException:
         raise
     except Exception as e:
@@ -300,6 +349,9 @@ async def clear_chat_history(
     try:
         session = await get_owned_session(session_id, user)
         await database_service.delete_chat_messages(session.id, user.id)
+        # 事件日志不删除历史，只追加一条"清空"事实——投影据此把消息列表归零，
+        # 但账本里仍然留着"曾经有过这些消息"的痕迹，便于审计与回溯
+        await event_store.append(session.id, [EventDraft(EventType.SESSION_CLEARED, {})])
         await agent.clear_chat_history(session.id)
         return {"message": "Chat history cleared successfully"}
     except HTTPException:

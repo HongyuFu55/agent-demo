@@ -20,7 +20,9 @@ from app.core.config import settings
 from app.core.logging import logger
 from app.models.chat_message import ChatMessage
 from app.models.session import Session as ChatSession
+from app.models.session_event import SessionEvent
 from app.models.user import User
+from app.services.events.engine import register_engine
 
 
 class DatabaseService:
@@ -53,8 +55,11 @@ class DatabaseService:
                 pool_recycle=1800,  # Recycle connections after 30 minutes
             )
 
-            # 自动初始化检查创建所有未建立的数据表 (User, ChatSession, ChatMessage 等)
+            # 自动初始化检查创建所有未建立的数据表 (User, ChatSession, ChatMessage, SessionEvent 等)
             SQLModel.metadata.create_all(self.engine)
+
+            # 把引擎注册给事件存储，让 session_event 的读写复用同一个连接池
+            register_engine(self.engine)
 
             logger.info("数据库连接池已初始化并完成数据表建表检查", pool_size=pool_size, max_overflow=max_overflow)
         except SQLAlchemyError as e:
@@ -164,9 +169,13 @@ class DatabaseService:
             messages = session.exec(select(ChatMessage).where(col(ChatMessage.session_id) == session_id)).all()
             for message in messages:
                 session.delete(message)
+            # 事件日志随会话一起删除：会话不存在时，它的历史也不再具有意义
+            events = session.exec(select(SessionEvent).where(col(SessionEvent.session_id) == session_id)).all()
+            for event in events:
+                session.delete(event)
             session.delete(chat_session)
             session.commit()
-            logger.info("会话已删除", session_id=session_id)
+            logger.info("会话已删除", session_id=session_id, deleted_events=len(events))
             return True
 
     async def get_session(self, session_id: str) -> Optional[ChatSession]:

@@ -40,6 +40,27 @@ session_names_generated_total = Counter(
     ["status"],  # "success" | "error"
 )
 
+# 会话事件日志指标：写入量按事件类型拆分，失败单独计数（失败必须可见，不能静默降级）
+session_events_appended_total = Counter(
+    "session_events_appended_total",
+    "Total session events appended to the event log",
+    ["type"],
+)
+
+session_event_append_failures_total = Counter(
+    "session_event_append_failures_total",
+    "Total failed session event appends",
+    ["type"],
+)
+
+# 会话历史读取来源：projection | chat_message | chat_message_fallback
+# fallback 一旦出现就应该告警 —— 说明有会话没走事件日志
+chat_history_reads_total = Counter(
+    "chat_history_reads_total",
+    "Total chat history reads by data source",
+    ["source"],
+)
+
 
 def setup_metrics(app):
     """配置 Prometheus 指标中间件和接口.

@@ -33,6 +33,11 @@ from app.schemas.auth import (
     UserResponse,
 )
 from app.services.database import database_service as db_service
+from app.services.events import (
+    EventDraft,
+    EventType,
+    event_store,
+)
 from app.utils.auth import (
     create_access_token,
     verify_token,
@@ -206,6 +211,18 @@ async def create_session(user: User = Depends(get_current_user)):
         # 在数据库中创建会话，并复制用户名用于 LLM 个性化
         session = await db_service.create_session(session_id, user.id, username=user.username)
 
+        # 会话创建也是一条事实：事件日志里没有 session/created，
+        # 就说明这个会话的历史是从"半路"开始的（例如迁移过来的旧数据）
+        await event_store.append(
+            session_id,
+            [
+                EventDraft(
+                    EventType.SESSION_CREATED,
+                    {"user_id": user.id, "name": session.name, "username": user.username},
+                )
+            ],
+        )
+
         logger.info(
             "session_created",
             session_id=session_id,
@@ -236,11 +253,24 @@ async def update_session_name(session_id: str, name: str = Form(...), user: User
         sanitized_session_id = sanitize_string(session_id)
         sanitized_name = sanitize_string(name)
         # 校验会话属于当前登录用户
-        if await db_service.get_user_session(sanitized_session_id, user.id) is None:
+        owned_session = await db_service.get_user_session(sanitized_session_id, user.id)
+        if owned_session is None:
             raise HTTPException(status_code=403, detail="Cannot modify other sessions")
+
+        previous_name = owned_session.name
 
         # 更新会话名称
         session = await db_service.update_session_name(sanitized_session_id, sanitized_name)
+
+        await event_store.append(
+            sanitized_session_id,
+            [
+                EventDraft(
+                    EventType.SESSION_RENAMED,
+                    {"name": session.name, "previous_name": previous_name, "source": "manual"},
+                )
+            ],
+        )
 
         return SessionResponse(session_id=sanitized_session_id, name=session.name)
     except ValueError as ve:
