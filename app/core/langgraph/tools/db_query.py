@@ -2,18 +2,47 @@
 
 包含已知会话/历史消息检索工具以及带有严格只读安全校验的 Text-to-SQL 动态查询工具。
 复用项目已有的 database_service 与 SQLModel ORM 架构。
+
+关于"当前用户"
+--------------
+这两个查会话的工具都带一个 `user_id: Annotated[str, InjectedToolArg]` 参数：
+    - 它被 InjectedToolArg 标记，**不会出现在 LLM 看到的工具 schema 里**；
+    - 由 graph.py 的工具执行层在调用前注入调用者身份；
+    - 工具内部先用它校验会话归属，再读数据。
+
+为什么不能把 user_id 暴露给模型？
+    模型能填任何参数，包括别人的 user_id。只要 user_id 在 schema 里，
+    "隔离"就等于"请模型自觉"。隐藏 + 执行层注入之后，模型根本无法表达
+    "查别人的会话"这个请求 —— 这是协议层的约束，不是提示词约束。
 """
 
+from typing import (
+    Annotated,
+    Optional,
+    Sequence,
+)
 import re
-from typing import Any, List, Optional
-from langchain_core.tools import tool
+
+from langchain_core.tools import (
+    InjectedToolArg,
+    tool,
+)
 from sqlalchemy import text
-from sqlmodel import Session, select, col
-from tenacity import retry, stop_after_attempt, wait_exponential
+from sqlmodel import (
+    Session,
+    col,
+    select,
+)
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from app.core.logging import logger
-from app.models.chat_message import ChatMessage
 from app.models.session import Session as ChatSession
+from app.schemas.chat import Message
+from app.services.chat_history import read_history
 from app.services.database import database_service
 
 # 危险关键字黑名单，严格禁止任何写/修改/删除/结构变更操作
@@ -59,82 +88,167 @@ DB_SCHEMA_DESCRIPTION = """
 """
 
 
-@tool
-@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=3))
-async def query_session_history(session_id: str, limit: int = 10) -> str:
-    """查询指定聊天会话 (session_id) 内的历史对话问答记录。
+def _parse_caller_id(value: object) -> Optional[int]:
+    """把注入进来的调用者标识解析成用户 ID.
 
     参数：
-        session_id: 聊天会话 UUID 标识符，例如 "d330cec5-fd23-44f0-80ec-cb707405fcf6"
-        limit: 最多返回的消息轮数（默认 10 轮）
+        value: 执行层注入的 user_id（字符串）。
+
+    返回：
+        Optional[int]: 解析成功返回用户 ID；缺失或非法返回 None（调用方据此拒绝执行）。
     """
-    if not session_id or not session_id.strip():
-        return "错误：未传入有效的 session_id。"
+    text_value = str(value or "").strip()
+    if not text_value.isdigit():
+        return None
+    return int(text_value)
+
+
+def pair_turns(messages: Sequence[Message]) -> list[tuple[str, str]]:
+    """把 user/assistant 交替的消息序列还原成"问 + 答"的轮次.
+
+    投影里存的是扁平消息列表，工具要的是成对的问答。异常情况这样处理：
+        - 连续两条用户消息：前一条算作"没有回答的轮次"；
+        - 只有回答没有提问：记为"没有提问的轮次"；
+        - 结尾的用户消息没有回答：保留，标为空回答。
+
+    参数：
+        messages: 按时间升序的消息列表。
+
+    返回：
+        list[tuple[str, str]]: (提问, 回答) 列表。
+    """
+    turns: list[tuple[str, str]] = []
+    pending_question: Optional[str] = None
+
+    for message in messages:
+        if message.role == "user":
+            if pending_question is not None:
+                turns.append((pending_question, ""))
+            pending_question = message.content
+        elif message.role == "assistant":
+            turns.append((pending_question or "", message.content))
+            pending_question = None
+
+    if pending_question is not None:
+        turns.append((pending_question, ""))
+
+    return turns
+
+
+@tool
+@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=3))
+async def query_session_history(
+    session_id: str = "",
+    limit: int = 10,
+    user_id: Annotated[str, InjectedToolArg] = "",
+    thread_id: Annotated[str, InjectedToolArg] = "",
+) -> str:
+    """查询当前用户某个会话里的历史对话记录.
+
+    数据来源与会话列表接口一致（事件日志的 messages 投影）。
+
+    参数：
+        session_id: 会话 UUID。**不传则查询"当前正在聊的这个会话"**；
+                    要查别的会话，先用 query_user_sessions 拿到 SessionID 再传进来。
+        limit: 最多返回多少轮问答（默认 10 轮）
+
+    说明：用户身份与当前会话由系统注入，调用方不需要也无法指定。
+    """
+    caller_id = _parse_caller_id(user_id)
+    if caller_id is None:
+        logger.warning("session_history_missing_caller")
+        return "错误：无法识别当前用户身份，已拒绝查询会话历史。"
+
+    # 模型给了 session_id 就用它（后面还要校验归属）；
+    # 没给就落到"当前会话"——否则模型根本不知道当前会话的 UUID，这个工具等于不可用
+    session_key = (session_id or "").strip() or (thread_id or "").strip()
+    if not session_key:
+        return "错误：未传入有效的 session_id，且无法确定当前会话。"
 
     try:
-        with Session(database_service.engine) as session:
-            statement = (
-                select(ChatMessage)
-                .where(col(ChatMessage.session_id) == session_id.strip())
-                .order_by(col(ChatMessage.created_at).desc())
-                .limit(limit)
+        # 先校验归属：不是自己的会话，直接当作"不存在"，不泄露会话是否存在
+        owned = await database_service.get_user_session(session_key, caller_id)
+        if owned is None:
+            logger.warning(
+                "session_history_access_denied",
+                session_id=session_key,
+                user_id=caller_id,
             )
-            messages = session.exec(statement).all()
+            return f"未找到会话 '{session_key}'，或该会话不属于当前用户。"
 
-        if not messages:
-            return f"未在会话 '{session_id}' 中查找到任何历史消息记录。"
+        history = await read_history(session_key, caller_id)
+        all_turns = pair_turns(history.messages)
+        turns = all_turns[-max(limit, 1) :] if all_turns else []
 
-        messages_list = list(messages)
-        messages_list.reverse()
-        formatted_dialogues = []
-        for idx, msg in enumerate(messages_list, 1):
-            formatted_dialogues.append(
-                f"【轮次 {idx}】({msg.created_at.strftime('%Y-%m-%d %H:%M:%S') if msg.created_at else '未知时间'})\n"
-                f"[用户提问] {msg.question}\n"
-                f"[AI回答] {msg.answer}"
-            )
+        if not turns:
+            return f"会话 '{session_key}' 中还没有任何对话记录。"
 
-        logger.info("query_session_history_success", session_id=session_id, count=len(messages_list))
-        return f"--- 会话 [{session_id}] 历史记录 (共 {len(messages_list)} 轮) ---\n\n" + "\n\n".join(formatted_dialogues)
+        lines = [
+            f"--- 会话 [{session_key}] 历史记录（最近 {len(turns)} 轮 / 共 {len(all_turns)} 轮）---",
+            "",
+        ]
+        for index, (question, answer) in enumerate(turns, 1):
+            lines.append(f"【轮次 {index}】")
+            lines.append(f"[用户提问] {question or '（该轮没有提问内容）'}")
+            lines.append(f"[AI回答] {answer or '（该轮没有文字回答）'}")
+            lines.append("")
+
+        logger.info(
+            "query_session_history_success",
+            session_id=session_key,
+            user_id=caller_id,
+            turns=len(turns),
+            source=history.source.value,
+        )
+        return "\n".join(lines).strip()
 
     except Exception as e:
-        logger.exception("query_session_history_failed", session_id=session_id, error=str(e))
+        logger.exception("query_session_history_failed", session_id=session_key, error=str(e))
         return f"查询会话历史发生异常：{str(e)}"
 
 
 @tool
 @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=3))
-async def query_user_sessions(user_id: int, limit: int = 5) -> str:
-    """查询指定用户 (user_id) 零散创建的历史会话列表与会话名称。
+async def query_user_sessions(
+    limit: int = 5,
+    user_id: Annotated[str, InjectedToolArg] = "",
+) -> str:
+    """查询当前用户自己最近创建的会话列表与会话名称.
 
     参数：
-        user_id: 用户 ID 整数，例如 12
         limit: 返回的最新会话个数限制（默认 5）
+
+    说明：用户身份由系统注入，调用方无法指定要查哪个用户。
     """
+    caller_id = _parse_caller_id(user_id)
+    if caller_id is None:
+        logger.warning("user_sessions_missing_caller")
+        return "错误：无法识别当前用户身份，已拒绝查询会话列表。"
+
     try:
         with Session(database_service.engine) as session:
             statement = (
                 select(ChatSession)
-                .where(col(ChatSession.user_id) == user_id)
+                .where(col(ChatSession.user_id) == caller_id)
                 .order_by(col(ChatSession.created_at).desc())
-                .limit(limit)
+                .limit(max(limit, 1))
             )
             sessions = session.exec(statement).all()
 
         if not sessions:
-            return f"用户 (ID: {user_id}) 目前没有任何历史会话记录。"
+            return "你目前还没有任何历史会话记录。"
 
         session_list = []
         for s in sessions:
             time_str = s.created_at.strftime("%Y-%m-%d %H:%M:%S") if s.created_at else "未知时间"
             session_list.append(f"- 会话名称: '{s.name or '未命名会话'}' | SessionID: {s.id} | 创建时间: {time_str}")
 
-        logger.info("query_user_sessions_success", user_id=user_id, count=len(sessions))
-        return f"用户 (ID: {user_id}) 的历史会话列表（最新 {len(sessions)} 个）：\n" + "\n".join(session_list)
+        logger.info("query_user_sessions_success", user_id=caller_id, count=len(sessions))
+        return f"你的历史会话列表（最新 {len(sessions)} 个）：\n" + "\n".join(session_list)
 
     except Exception as e:
-        logger.exception("query_user_sessions_failed", user_id=user_id, error=str(e))
-        return f"查询用户会话列表发生异常：{str(e)}"
+        logger.exception("query_user_sessions_failed", user_id=caller_id, error=str(e))
+        return f"查询会话列表发生异常：{str(e)}"
 
 
 @tool

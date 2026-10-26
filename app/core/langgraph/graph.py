@@ -94,6 +94,16 @@ TOOL_DISPLAY_NAMES: dict[str, str] = {
     "query_order_summary": "MCP 订单数据汇总",
 }
 
+# 需要"调用者身份"的工具名。
+#
+# 这些工具带 `Annotated[..., InjectedToolArg]` 参数：对 LLM 隐藏，由下面 _tool_call
+# 在执行前从 config 注入。名单必须显式维护——注入是安全边界，不应该靠反射猜。
+USER_SCOPED_TOOLS: frozenset[str] = frozenset({"query_session_history", "query_user_sessions"})
+
+# 需要注入"当前会话 ID"的工具：模型不知道当前 thread 的 UUID，
+# 不注入的话它永远只能查用户手动粘贴了 ID 的会话。
+THREAD_SCOPED_TOOLS: frozenset[str] = frozenset({"query_session_history"})
+
 
 
 class LangGraphAgent:
@@ -215,16 +225,22 @@ class LangGraphAgent:
             raise Exception(f"failed to get llm response after trying all models: {str(e)}")
 
     # 定义工具节点
-    async def _tool_call(self, state: GraphState) -> Command:
+    async def _tool_call(self, state: GraphState, config: RunnableConfig) -> Command:
         """处理最后一条消息中的工具调用.
 
         参数：
             state: 当前智能体状态，包含消息和工具调用。
+            config: 本次调用的 runnable 配置（metadata 里有调用者 user_id）。
 
         返回：
             Command: 包含更新后消息，并路由回 chat 节点的命令对象。
         """
         tool_calls = state.messages[-1].tool_calls
+
+        # 调用者身份唯一来源：路由层写进 config.metadata 的 user_id。
+        # 绝不从 LLM 的工具参数里取——那是模型可以随便填的东西。
+        caller_user_id = str(config.get("metadata", {}).get("user_id") or "")
+        current_thread_id = str(config.get("configurable", {}).get("thread_id") or "")
 
         async def _execute_tool(tool_call: dict) -> ToolMessage:
             tool_name = tool_call["name"]
@@ -294,7 +310,13 @@ class LangGraphAgent:
 
             try:
                 tool_instance = self.tools_by_name[tool_name]
-                tool_result = await tool_instance.ainvoke(tool_args)
+                # 用户维度的工具：注入调用者身份与当前会话（对应工具里的 InjectedToolArg 参数）
+                tool_input = dict(tool_args)
+                if tool_name in USER_SCOPED_TOOLS:
+                    tool_input["user_id"] = caller_user_id
+                if tool_name in THREAD_SCOPED_TOOLS:
+                    tool_input["thread_id"] = current_thread_id
+                tool_result = await tool_instance.ainvoke(tool_input)
                 str_result = str(tool_result)
             except Exception as e:
                 logger.warning(
