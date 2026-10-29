@@ -137,16 +137,19 @@ async def chat(
                 chat_request.messages, session.id, user_id=str(session.user_id), username=session.username
             )
             answer = get_latest_assistant_message(result)
-            await turn.assistant(answer, model=agent.llm_service.get_llm().get_name())
+            event_ok = await turn.assistant(answer, model=agent.llm_service.get_llm().get_name())
 
-        # 影子写入：事件日志与 chat_message 暂时双写，用 replay_session.py --verify 比对一致性
-        await database_service.create_chat_message(
-            session_id=session.id,
-            user_id=user.id,
-            question=user_message,
-            answer=answer,
-            metadata={"source": "chat"},
-        )
+            # 影子写入：事件日志与 chat_message 双写，用 replay_session.py --verify 比对一致性
+            chat_msg = await database_service.create_chat_message(
+                session_id=session.id,
+                user_id=user.id,
+                question=user_message,
+                answer=answer,
+                metadata={"source": "chat"},
+            )
+            if event_ok and not chat_msg:
+                await turn.error(kind="dual_write_db_failure", message="事件写入成功但数据库消息表写入失败")
+                logger.error("dual_write_inconsistency", session_id=session.id, event_ok=event_ok, db_ok=False)
 
         logger.info("聊天请求处理完成", session_id=session.id, user_id=user.id)
 
@@ -187,9 +190,8 @@ async def chat_stream(
             maybe_name_session(session.id, session.name, chat_request.messages)
 
         async def event_generator():
-            """生成符合 W3C 规范的标准 Typed SSE 事件流."""
+            """生成符合 W3C 规范的标准 Typed SSE 事件流（四步提交架构）."""
             tokens: list[str] = []
-            has_done = False
             model_name = agent.llm_service.get_llm().get_name()
             user_message = get_latest_user_message(chat_request.messages)
 
@@ -204,12 +206,14 @@ async def chat_stream(
                         ):
                             if event.event == SSEEventType.TOKEN:
                                 tokens.append(event.content)
+                                yield event.to_sse_packet()
                             elif event.event == SSEEventType.TOOL_START:
                                 await turn.tool_started(
                                     tool_call_id=event.tool_call_id,
                                     name=event.tool_name or "unknown",
                                     args=event.tool_args,
                                 )
+                                yield event.to_sse_packet()
                             elif event.event == SSEEventType.TOOL_END:
                                 await turn.tool_finished(
                                     tool_call_id=event.tool_call_id,
@@ -217,35 +221,55 @@ async def chat_stream(
                                     duration_ms=event.duration_ms,
                                     result_preview=event.tool_result,
                                 )
+                                yield event.to_sse_packet()
                             elif event.event == SSEEventType.INTERRUPT:
                                 turn.interrupted("human_approval_required")
+                                yield event.to_sse_packet()
                             elif event.event == SSEEventType.DONE:
-                                has_done = True
-                            yield event.to_sse_packet()
-
-                    # 若生成器因异常等未产出 done 事件，补发完成事件
-                    if not has_done:
-                        done_event = SSEEvent(
-                            event=SSEEventType.DONE,
-                            type=SSEEventType.DONE.value,
-                            content="",
-                            done=True,
-                        )
-                        yield done_event.to_sse_packet()
+                                # 截留内部完成信号：终结帧必须在落盘后由本函数统一发射
+                                pass
+                            else:
+                                yield event.to_sse_packet()
 
                     answer = "".join(tokens)
-                    await turn.assistant(answer, model=model_name)
 
-                    # 影子写入：事件日志与 chat_message 暂时双写
-                    await database_service.create_chat_message(
+                    # ① 步骤 1：写入事件日志 (MESSAGE_ASSISTANT)
+                    event_ok = await turn.assistant(answer, model=model_name)
+
+                    # ② 步骤 2：持久化消息数据库 (chat_message)
+                    chat_msg = await database_service.create_chat_message(
                         session_id=session.id,
                         user_id=user.id,
                         question=user_message,
                         answer=answer,
                         metadata={"source": "chat_stream"},
                     )
+                    db_ok = chat_msg is not None
 
-                    logger.info("流式聊天请求处理完成", session_id=session.id, user_id=user.id)
+                    # 若出现双写不一致，执行 M4 差别化告警
+                    if event_ok and not db_ok:
+                        await turn.error(kind="dual_write_db_failure", message="事件写入成功但数据库消息表写入失败")
+                        logger.error("dual_write_inconsistency", session_id=session.id, event_ok=event_ok, db_ok=db_ok)
+
+                    # ③ 步骤 3：关轮 (TURN_END 必须早于 DONE，保证历史读取平衡性)
+                    turn_ok = await turn.finish()
+
+                    # ④ 步骤 4：宣布最终完成（带 committed 与 message_id）
+                    is_committed = bool(event_ok and db_ok and turn_ok)
+                    done_event = SSEEvent(
+                        event=SSEEventType.DONE,
+                        type=SSEEventType.DONE.value,
+                        content="",
+                        done=True,
+                        metadata={
+                            "message_id": chat_msg.id if chat_msg else None,
+                            "committed": is_committed,
+                            "turn_id": turn.turn_id,
+                        },
+                    )
+                    yield done_event.to_sse_packet()
+
+                    logger.info("流式聊天四步提交完成", session_id=session.id, user_id=user.id, committed=is_committed)
 
                 except Exception as e:
                     await turn.error(kind="stream_failure", message=str(e))

@@ -666,26 +666,15 @@ class LangGraphAgent:
                 interrupt_payload=payload,
                 done=False,
             )
-        except GraphRecursionError:
+        except GraphRecursionError as rec_err:
             logger.warning(
                 "graph_recursion_limit_exceeded",
                 session_id=session_id,
                 recursion_limit=settings.LANGGRAPH_RECURSION_LIMIT,
             )
-            yield SSEEvent(
-                event=SSEEventType.ERROR,
-                type=SSEEventType.ERROR.value,
-                content="抱歉，这个问题需要的处理步骤过多，我无法完成。请尝试拆分问题或换一种方式提问。",
-                done=True,
-            )
+            raise RuntimeError("抱歉，这个问题需要的处理步骤过多，我无法完成。请尝试拆分问题或换一种方式提问。") from rec_err
         except Exception as stream_error:
             logger.exception("stream_processing_failed", error=str(stream_error), session_id=session_id)
-            yield SSEEvent(
-                event=SSEEventType.ERROR,
-                type=SSEEventType.ERROR.value,
-                content=f"流式生成异常: {str(stream_error)}",
-                done=True,
-            )
             raise stream_error
 
     async def get_chat_history(self, session_id: str) -> list[Message]:

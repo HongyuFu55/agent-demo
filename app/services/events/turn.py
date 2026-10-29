@@ -111,21 +111,21 @@ class TurnHandle:
             ]
         )
 
-    async def finish(self) -> None:
-        """写入 turn/end（幂等：重复调用只写一次）."""
+    async def finish(self) -> bool:
+        """写入 turn/end（幂等：重复调用只写一次，返回是否落盘成功）."""
         if self._finished:
-            return
+            return True
         self._finished = True
         duration_ms = round((time.perf_counter() - self._started_at) * 1000, 2)
-        await self._append(
+        return await self._append(
             [EventDraft(EventType.TURN_END, {"status": self.status.value, "duration_ms": duration_ms})]
         )
 
     # ------------------------------------------------------------ 业务事件
 
-    async def assistant(self, content: str, *, model: Optional[str] = None) -> None:
-        """记录助手回复的纯文本（已剥离工具信令）."""
-        await self._append([EventDraft(EventType.MESSAGE_ASSISTANT, {"content": content, "model": model})])
+    async def assistant(self, content: str, *, model: Optional[str] = None) -> bool:
+        """记录助手回复的纯文本（已剥离工具信令，返回是否落盘成功）."""
+        return await self._append([EventDraft(EventType.MESSAGE_ASSISTANT, {"content": content, "model": model})])
 
     async def tool_started(
         self,
@@ -133,9 +133,9 @@ class TurnHandle:
         tool_call_id: Optional[str],
         name: str,
         args: Any = None,
-    ) -> None:
-        """记录工具开始调用."""
-        await self._append(
+    ) -> bool:
+        """记录工具开始调用（返回是否落盘成功）."""
+        return await self._append(
             [
                 EventDraft(
                     EventType.TOOL_START,
@@ -152,9 +152,9 @@ class TurnHandle:
         ok: bool = True,
         duration_ms: Optional[float] = None,
         result_preview: Any = None,
-    ) -> None:
-        """记录工具执行完毕（只存摘要，避免把完整工具输出灌进日志）."""
-        await self._append(
+    ) -> bool:
+        """记录工具执行完毕（只存摘要，避免把完整工具输出灌进日志，返回是否落盘成功）."""
+        return await self._append(
             [
                 EventDraft(
                     EventType.TOOL_END,
@@ -169,10 +169,10 @@ class TurnHandle:
             ]
         )
 
-    async def error(self, *, kind: str, message: str) -> None:
-        """记录本轮异常，并把 turn 状态置为 error."""
+    async def error(self, *, kind: str, message: str) -> bool:
+        """记录本轮异常，并把 turn 状态置为 error（返回是否落盘成功）."""
         self.status = TurnStatus.ERROR
-        await self._append(
+        return await self._append(
             [EventDraft(EventType.ERROR_RAISED, {"kind": kind, "message": _preview(message, 1000)})]
         )
 
@@ -215,4 +215,4 @@ async def record_turn(
         await handle.error(kind=exc.__class__.__name__, message=str(exc))
         raise
     finally:
-        await handle.finish()
+        _ = await handle.finish()

@@ -9,7 +9,7 @@ import json
 import time
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SSEEventType(str, Enum):
@@ -42,7 +42,10 @@ class SSEEvent(BaseModel):
         subgraph_name: 二级子图名称。
         subgraph_step: 二级子图当前步骤。
         timestamp: 事件生成时间戳。
+        metadata: 事件附加元数据（如 message_id, committed, turn_id）。
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     event: SSEEventType = Field(default=SSEEventType.TOKEN, description="W3C SSE 事件名称")
     type: str = Field(default="token", description="事件类型标识符")
@@ -66,6 +69,9 @@ class SSEEvent(BaseModel):
 
     # 元数据
     timestamp: float = Field(default_factory=time.time, description="时间戳")
+    metadata: Optional[dict[str, Any]] = Field(
+        default=None, description="事件附加元数据（如 message_id, committed, turn_id）"
+    )
 
     def to_sse_packet(self) -> str:
         r"""生成符合 W3C 规范的完整 SSE 文本数据包.
