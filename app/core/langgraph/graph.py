@@ -48,17 +48,21 @@ from app.core.config import (
     Environment,
     settings,
 )
+from app.core.langgraph.pipeline import (
+    ChatRequestContext,
+    default_context_pipeline,
+)
 from app.core.langgraph.tools import static_tools, load_all_tools
 from app.core.logging import logger
 from app.core.metrics import llm_inference_duration_seconds
 from app.core.observability import langfuse_callback_handler
-from app.core.prompts import load_system_prompt
 from app.schemas import (
     GraphState,
     Message,
     SSEEvent,
     SSEEventType,
 )
+from app.services.chat_history import read_history_for_llm
 from app.services.llm import llm_service
 from app.services.memory import memory_service
 from app.services.memory_queue import memory_queue_service
@@ -190,11 +194,28 @@ class LangGraphAgent:
         )
 
         username = config.get("metadata", {}).get("username")
-        thread_id = config.get("configurable", {}).get("thread_id")
-        SYSTEM_PROMPT = load_system_prompt(username=username, long_term_memory=state.long_term_memory)
+        thread_id = str(config.get("configurable", {}).get("thread_id") or "")
+        user_id = str(config.get("metadata", {}).get("user_id") or "")
 
-        # 使用系统提示词准备消息
-        messages = prepare_messages(state.messages, SYSTEM_PROMPT)
+        # P1-A 上下文管线化与生命周期优化 (M7 / M9)：
+        # 复用 state.assembled_context，仅首步 (step == 1) 执行全量管线组装，后续工具循环直接复用缓存
+        if state.assembled_context:
+            system_prompt = state.assembled_context
+        else:
+            ctx = ChatRequestContext(
+                username=username,
+                thread_id=thread_id,
+                user_id=user_id,
+                long_term_memory=state.long_term_memory,
+            )
+            ctx = await default_context_pipeline.execute(ctx)
+            system_prompt = ctx.system_prompt
+
+        # P1-B 混合消息派生 (方案 B 解决 S3)：
+        # 拼接顺序：历史在前（只读投影），当前活跃轮在后（完整 AIMessage ↔ ToolMessage 配对）
+        history_msgs = getattr(state, "history_messages", None) or []
+        combined_messages = [*history_msgs, *state.messages]
+        messages = prepare_messages(combined_messages, system_prompt)
 
         try:
             # 使用带自动重试和循环 fallback 的 LLM 服务
@@ -214,7 +235,10 @@ class LangGraphAgent:
             else:
                 goto = END
 
-            return Command(update={"messages": [response_message]}, goto=goto)
+            return Command(
+                update={"messages": [response_message], "assembled_context": system_prompt},
+                goto=goto,
+            )
         except Exception as e:
             logger.error(
                 "llm_call_failed_all_models",
@@ -474,8 +498,18 @@ class LangGraphAgent:
                 # 每次只注入最新一条用户消息，避免前端全量历史与 checkpoint 历史叠加，
                 # 导致 LLM 看到重复混乱的上下文（"你说测试一下" 幻觉的根因）。
                 latest_user_message = [msg for msg in messages if msg.role == "user"][-1]
+                if settings.LLM_CONTEXT_SOURCE == "projection":
+                    history = await read_history_for_llm(
+                        session_id, user_id=int(user_id) if user_id and user_id.isdigit() else None
+                    )
+                else:
+                    history = []
                 response = await graph.ainvoke(
-                    input={"messages": [latest_user_message.model_dump()], "long_term_memory": relevant_memory},
+                    input={
+                        "messages": [latest_user_message.model_dump()],
+                        "history_messages": history,
+                        "long_term_memory": relevant_memory,
+                    },
                     config=config,
                 )
 
@@ -558,7 +592,17 @@ class LangGraphAgent:
                 relevant_memory = relevant_memory or "No relevant memory found."
                 # 同 get_response：只传最新一条用户消息，避免 add_messages 造成历史叠加
                 latest_user_message = [msg for msg in messages if msg.role == "user"][-1]
-                graph_input = {"messages": [latest_user_message.model_dump()], "long_term_memory": relevant_memory}
+                if settings.LLM_CONTEXT_SOURCE == "projection":
+                    history = await read_history_for_llm(
+                        session_id, user_id=int(user_id) if user_id and user_id.isdigit() else None
+                    )
+                else:
+                    history = []
+                graph_input = {
+                    "messages": [latest_user_message.model_dump()],
+                    "history_messages": history,
+                    "long_term_memory": relevant_memory,
+                }
 
             seen_tool_names: set[str] = set()
             tool_start_times: dict[str, float] = {}

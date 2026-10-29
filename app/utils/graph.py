@@ -1,6 +1,7 @@
 """应用图工具函数."""
 
 import tiktoken
+from typing import Any
 from langchain_core.messages import BaseMessage
 from langchain_core.messages import trim_messages as _trim_messages
 
@@ -73,16 +74,26 @@ def _count_tokens_tiktoken(messages: list) -> int:
     return num_tokens
 
 
-def dump_messages(messages: list[Message]) -> list[dict]:
+def dump_messages(messages: list[Any]) -> list[dict]:
     """将消息转换为字典列表.
 
     参数：
-        messages: 要转换的消息列表。
+        messages: 要转换的消息列表（支持 Message 模型、LangChain BaseMessage 或原生 dict）。
 
     返回：
         list[dict]: 转换后的消息字典列表。
     """
-    return [message.model_dump() for message in messages]
+    result: list[dict] = []
+    for msg in messages:
+        if isinstance(msg, dict):
+            result.append(msg)
+        elif hasattr(msg, "model_dump"):
+            result.append(msg.model_dump())
+        elif hasattr(msg, "dict"):
+            result.append(msg.dict())
+        else:
+            result.append({"role": getattr(msg, "role", "user"), "content": str(msg)})
+    return result
 
 
 def extract_text_content(content: str | list) -> str:
@@ -136,7 +147,7 @@ def process_llm_response(response: BaseMessage) -> BaseMessage:
     return response
 
 
-def prepare_messages(messages: list[Message], system_prompt: str) -> list[Message]:
+def prepare_messages(messages: list[Any], system_prompt: str) -> list[Message]:
     """准备发送给 LLM 的消息."""
     try:
         # 使用 32000 作为上下文裁剪上限，防止工具调用的较长中间结果被误裁切

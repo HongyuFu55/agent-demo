@@ -214,3 +214,17 @@ async def read_history(session_id: str, user_id: int) -> HistoryRead:
         source=HistorySource.PROJECTION,
         event_count=len(records),
     )
+
+
+async def read_history_for_llm(session_id: str, user_id: Optional[int] = None) -> list[dict]:
+    """读取会话历史并转换为可供 LangGraph/LLM 消费的消息字典列表.
+
+    参数：
+        session_id: 会话 ID。
+        user_id: 可选的用户 ID。
+
+    返回：
+        list[dict]: 历史消息列表（字典形式，包含 role 与 content）。
+    """
+    history_read = await read_history(session_id, user_id=user_id or 0)
+    return [msg.model_dump() for msg in history_read.messages]

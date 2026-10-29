@@ -176,6 +176,15 @@ class Settings:
         #   projection   —— 从事件日志折叠（默认，M2 后的主路径）
         #   chat_message —— 读旧消息表（出问题时可一键回退，不用改代码）
         self.SESSION_EVENT_READ_SOURCE = os.getenv("SESSION_EVENT_READ_SOURCE", "projection").strip().lower()
+        # LLM 输入上下文历史来源：
+        #   checkpoint —— 来自 LangGraph Checkpoint 的可变状态数组（旧路径，用于回退）
+        #   projection —— 来自 session_event 事件日志的只读投影派生（方案 B，推荐新路径）
+        _context_source = os.getenv("LLM_CONTEXT_SOURCE", "checkpoint").strip().lower()
+        if _context_source not in {"checkpoint", "projection"}:
+            raise ValueError(
+                f"环境变量 LLM_CONTEXT_SOURCE 配置错误: {_context_source!r}。只能是 'checkpoint' 或 'projection'"
+            )
+        self.LLM_CONTEXT_SOURCE = _context_source
         self.DEFAULT_LLM_TEMPERATURE = float(os.getenv("DEFAULT_LLM_TEMPERATURE", "0.2"))
         self.MAX_TOKENS = int(os.getenv("MAX_TOKENS", "2000"))
         self.MAX_LLM_CALL_RETRIES = int(os.getenv("MAX_LLM_CALL_RETRIES", "3"))
