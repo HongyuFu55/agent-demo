@@ -32,7 +32,6 @@ from langgraph.graph.state import (
 from langgraph.types import (
     RetryPolicy,
     StateSnapshot,
-    interrupt,
 )
 from psycopg import (
     AsyncConnection,
@@ -53,6 +52,10 @@ from app.core.langgraph.pipeline import (
     default_context_pipeline,
 )
 from app.core.langgraph.tools import static_tools, load_all_tools
+from app.core.langgraph.tools.pipeline import (
+    ToolPipeline,
+    ToolPipelineContext,
+)
 from app.core.logging import logger
 from app.core.metrics import llm_inference_duration_seconds
 from app.core.observability import langfuse_callback_handler
@@ -250,7 +253,7 @@ class LangGraphAgent:
 
     # 定义工具节点
     async def _tool_call(self, state: GraphState, config: RunnableConfig) -> Command:
-        """处理最后一条消息中的工具调用.
+        """处理最后一条消息中的工具调用 (通过三段式 ToolPipeline 执行).
 
         参数：
             state: 当前智能体状态，包含消息和工具调用。
@@ -261,110 +264,20 @@ class LangGraphAgent:
         """
         tool_calls = state.messages[-1].tool_calls
 
-        # 调用者身份唯一来源：路由层写进 config.metadata 的 user_id。
-        # 绝不从 LLM 的工具参数里取——那是模型可以随便填的东西。
         caller_user_id = str(config.get("metadata", {}).get("user_id") or "")
         current_thread_id = str(config.get("configurable", {}).get("thread_id") or "")
 
-        async def _execute_tool(tool_call: dict) -> ToolMessage:
-            tool_name = tool_call["name"]
-            tool_args = tool_call.get("args", {})
-
-            # 🛡️ 敏感操作人机协同中断确认 (Human-in-the-Loop)
-            if tool_name == "send_email_notification":
-                to_email = str(tool_args.get("to_email", ""))
-                subject = str(tool_args.get("subject", ""))
-                content = str(tool_args.get("content", ""))
-
-                approval_prompt = (
-                    "⚠️ **【需要人工确认】智能体申请发送以下电子邮件：**\n\n"
-                    f"- 📧 **收件人**：`{to_email}`\n"
-                    f"- 📌 **主题**：`{subject}`\n\n"
-                    "📄 **邮件正文预览：**\n"
-                    "```text\n"
-                    f"{content}\n"
-                    "```\n\n"
-                    "请确认是否批准发送？您可以回复 **“确认发送”** 或 **“拒绝发送”**。"
-                )
-
-                approval_payload = {
-                    "type": "human_approval_required",
-                    "action": "send_email",
-                    "to_email": to_email,
-                    "subject": subject,
-                    "content": content,
-                    "message": approval_prompt,
-                }
-
-                logger.info(
-                    "human_in_the_loop_interrupt_triggered",
-                    tool_name=tool_name,
-                    to_email=to_email,
-                    subject=subject,
-                )
-
-                # 挂起当前状态机，等待人工确认
-                user_decision = interrupt(approval_payload)
-
-                # 恢复后检查用户决策
-                decision_str = str(user_decision).lower().strip()
-                is_approved = any(kw in decision_str for kw in ["approve", "yes", "y", "确认", "同意", "发送", "确定", "准许", "通过", "发吧", "好"])
-                is_rejected = any(kw in decision_str for kw in ["reject", "no", "n", "拒绝", "取消", "别发", "不发", "驳回", "停止", "算了"])
-
-                if not is_approved or is_rejected:
-                    logger.info(
-                        "email_sending_rejected_by_user",
-                        user_decision=decision_str,
-                        to_email=to_email,
-                    )
-                    return ToolMessage(
-                        content=(
-                            f"❌ 操作已取消：用户已人工拒绝或取消了本次邮件发送（用户指令: {user_decision}）。"
-                            "请向用户告知邮件未发出，并询问用户是否有其他修改建议或下一步安排。"
-                        ),
-                        name=tool_name,
-                        tool_call_id=tool_call["id"],
-                    )
-
-                logger.info(
-                    "email_sending_approved_by_user",
-                    user_decision=decision_str,
-                    to_email=to_email,
-                )
-
-            try:
-                tool_instance = self.tools_by_name[tool_name]
-                # 用户维度的工具：注入调用者身份与当前会话（对应工具里的 InjectedToolArg 参数）
-                tool_input = dict(tool_args)
-                if tool_name in USER_SCOPED_TOOLS:
-                    tool_input["user_id"] = caller_user_id
-                if tool_name in THREAD_SCOPED_TOOLS:
-                    tool_input["thread_id"] = current_thread_id
-                tool_result = await tool_instance.ainvoke(tool_input)
-                str_result = str(tool_result)
-            except Exception as e:
-                logger.warning(
-                    "tool_execution_exception",
-                    name=tool_name,
-                    args=tool_args,
-                    error=str(e),
-                )
-                str_result = f"工具 [{tool_name}] 执行出错: {str(e)}。提示：如果缺少必要参数 (如 poiId/URL/关键词)，请尝试调整参数或更换其他匹配的工具。"
-
-            logger.info("tool_executed_result", name=tool_name, result_snippet=str_result[:200])
-            if len(str_result) > 4000:
-                str_result = str_result[:4000] + "...<tool_result_truncated>"
-            return ToolMessage(
-                content=str_result,
-                name=tool_name,
-                tool_call_id=tool_call["id"],
-            )
+        ctx = ToolPipelineContext(
+            caller_user_id=caller_user_id,
+            current_thread_id=current_thread_id,
+            tools_by_name=self.tools_by_name,
+        )
 
         # 单个工具调用直接 await，多个工具调用并发执行以节省等待时间
         if len(tool_calls) == 1:
-            outputs = [await _execute_tool(tool_calls[0])]
+            outputs = [await ToolPipeline.dispatch(tool_calls[0], ctx)]
         else:
-            outputs = list(await asyncio.gather(*[_execute_tool(tc) for tc in tool_calls]))
+            outputs = list(await asyncio.gather(*[ToolPipeline.dispatch(tc, ctx) for tc in tool_calls]))
 
         return Command(update={"messages": outputs}, goto="chat")
 
