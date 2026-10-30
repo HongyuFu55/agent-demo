@@ -12,7 +12,6 @@ from email.mime.text import MIMEText
 from typing import Annotated
 
 from langchain_core.tools import tool
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
 from app.core.logging import logger
@@ -128,11 +127,6 @@ def _build_html_content(subject: str, content: str) -> str:
     """
 
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=10),
-    reraise=True,
-)
 def _send_sync_smtp(
     smtp_server: str,
     smtp_port: int,
@@ -144,8 +138,8 @@ def _send_sync_smtp(
     subject: str,
     content: str,
 ) -> None:
-    """同步 SMTP 发送函数，封装于 Tenacity 重试中."""
-    # 构建复合邮件格式 (纯文本 + HTML)
+    """同步 SMTP 发送函数."""
+    # 组装复合邮件格式，支持纯文本与 HTML 混排
     msg = MIMEMultipart("alternative")
     msg["Subject"] = Header(subject, "utf-8").encode()
     msg["From"] = f"{Header(from_name, 'utf-8').encode()} <{user}>"
@@ -179,7 +173,7 @@ async def send_email_notification(
     subject: Annotated[str, "邮件主题/标题，应简明扼要概括邮件核心内容"],
     content: Annotated[str, "邮件正文内容，支持详细的文本描述、汇报总结、待办列表或结构化信息"],
 ) -> str:
-    """通过 163 网易邮箱 SMTP 服务向指定收件人发送电子邮件通知。
+    """通过 163 网易邮箱 SMTP 服务向指定收件人发送电子邮件通知.
 
     当需要给用户发送重要通知、分析报告、会议纪要、告警提醒或将对话内容以邮件形式存档发送时，调用此工具。
     """
@@ -206,7 +200,7 @@ async def send_email_notification(
             password_configured=bool(smtp_password),
         )
         return (
-            f"❌ 邮件发送失败：邮件发送服务尚未配置发件人或授权信息，无法真实发送邮件。"
+            "❌ 邮件发送失败：邮件发送服务尚未配置发件人或授权信息，无法真实发送邮件。"
         )
 
     # 3. 异步非阻塞执行真实邮件发送
