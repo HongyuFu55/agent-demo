@@ -194,6 +194,7 @@ async def chat_stream(
             tokens: list[str] = []
             model_name = agent.llm_service.get_llm().get_name()
             user_message = get_latest_user_message(chat_request.messages)
+            interrupted = False
 
             # 事件日志包住整轮：无论正常结束、异常还是断流，都会尝试写 turn/end
             async with record_turn(
@@ -224,12 +225,24 @@ async def chat_stream(
                                 yield event.to_sse_packet()
                             elif event.event == SSEEventType.INTERRUPT:
                                 turn.interrupted("human_approval_required")
+                                interrupted = True
                                 yield event.to_sse_packet()
                             elif event.event == SSEEventType.DONE:
                                 # 截留内部完成信号：终结帧必须在落盘后由本函数统一发射
                                 pass
                             else:
                                 yield event.to_sse_packet()
+
+                    if interrupted:
+                        await turn.finish()
+                        yield SSEEvent(
+                            event=SSEEventType.DONE,
+                            type=SSEEventType.DONE.value,
+                            content="",
+                            done=True,
+                            metadata={"committed": False, "reason": "interrupted", "turn_id": turn.turn_id},
+                        ).to_sse_packet()
+                        return
 
                     answer = "".join(tokens)
 
@@ -244,18 +257,12 @@ async def chat_stream(
                         answer=answer,
                         metadata={"source": "chat_stream"},
                     )
-                    db_ok = chat_msg is not None
-
-                    # 若出现双写不一致，执行 M4 差别化告警
-                    if event_ok and not db_ok:
-                        await turn.error(kind="dual_write_db_failure", message="事件写入成功但数据库消息表写入失败")
-                        logger.error("dual_write_inconsistency", session_id=session.id, event_ok=event_ok, db_ok=db_ok)
 
                     # ③ 步骤 3：关轮 (TURN_END 必须早于 DONE，保证历史读取平衡性)
                     turn_ok = await turn.finish()
 
                     # ④ 步骤 4：宣布最终完成（带 committed 与 message_id）
-                    is_committed = bool(event_ok and db_ok and turn_ok)
+                    is_committed = bool(event_ok and turn_ok)
                     done_event = SSEEvent(
                         event=SSEEventType.DONE,
                         type=SSEEventType.DONE.value,

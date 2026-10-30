@@ -196,3 +196,66 @@ class TestP0StreamSettlement:
 
         app.dependency_overrides.clear()
 
+
+    def test_stream_settlement_interrupt_committed_false(
+        self, client: TestClient, mock_user: User, mock_session: Session
+    ) -> None:
+        """测试 4：断言审批中断时，不写 assistant 与消息行，DONE 携带 committed=False (覆盖 B3)."""
+        app.dependency_overrides[get_current_user] = lambda: mock_user
+
+        async def fake_stream(*args, **kwargs):
+            yield SSEEvent(
+                event=SSEEventType.INTERRUPT,
+                type=SSEEventType.INTERRUPT.value,
+                content="请确认是否发送邮件",
+                interrupt_payload={"type": "human_approval_required"},
+                done=False,
+            )
+            # get_stream_response 正常会在最后 yield DONE
+            yield SSEEvent(event=SSEEventType.DONE, type=SSEEventType.DONE.value, content="", done=True)
+
+        appended_event_types = []
+
+        async def fake_event_append(event_dict):
+            appended_event_types.append(event_dict.get("type"))
+            return None
+
+        with patch("app.api.v1.chatbot.get_owned_session", return_value=mock_session), \
+             patch("app.api.v1.chatbot.agent.get_stream_response", side_effect=fake_stream), \
+             patch("app.api.v1.chatbot.database_service.create_chat_message", new_callable=AsyncMock) as mock_create_msg, \
+             patch("app.services.events.store.event_store.append", side_effect=fake_event_append):
+
+            response = client.post(
+                "/api/v1/chatbot/chat/stream",
+                json={
+                    "session_id": mock_session.id,
+                    "messages": [{"role": "user", "content": "请帮我发封邮件"}],
+                },
+            )
+
+            assert response.status_code == 200
+            events = _parse_sse_events(response.text)
+
+            # 1. 验证事件流包含 interrupt 且不包含 error
+            interrupt_events = [e for e in events if e.get("event") == "interrupt"]
+            assert len(interrupt_events) == 1
+            assert interrupt_events[0]["content"] == "请确认是否发送邮件"
+
+            error_events = [e for e in events if e.get("event") == "error"]
+            assert len(error_events) == 0
+
+            # 2. 验证 DONE 帧元数据为 committed: False，且携带 reason: "interrupted"
+            done_events = [e for e in events if e.get("event") == "done"]
+            assert len(done_events) == 1
+            done_event = done_events[0]
+            assert done_event["metadata"]["committed"] is False
+            assert done_event["metadata"]["reason"] == "interrupted"
+            assert "turn_id" in done_event["metadata"]
+
+            # 3. 验证数据库 create_chat_message 绝未调用（不写空消息行）
+            mock_create_msg.assert_not_called()
+
+            # 4. 验证事件日志绝未写入 message/assistant
+            assert "message/assistant" not in appended_event_types
+
+        app.dependency_overrides.clear()
