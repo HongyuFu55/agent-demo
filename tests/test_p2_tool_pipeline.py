@@ -67,8 +67,9 @@ class TestP2ToolPipeline:
         assert omitted.kind == "exact"
         assert omitted.original_length == 5000
         assert omitted.retained_length == 4000
+        assert len(retained) == 4000
         assert "[Omitted: kind=exact, original_length=5000, retained_length=4000]" in retained
-        assert retained.startswith("A" * 4000)
+        assert retained.startswith("A")
 
         # 验证日志片段生成
         snippet = OutputRetention.get_snippet("X" * 300, limit=200)

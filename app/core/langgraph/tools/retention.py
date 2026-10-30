@@ -46,15 +46,18 @@ class OutputRetention:
         if len(output) <= limit:
             return output, None
 
+        # 将标记文本计入限额，确保返回值总长度严格不超过 limit (解决约 70 字符的溢出)
+        marker = (
+            f"\n\n[Omitted: kind=exact, original_length={len(output)}, retained_length={limit}]"
+        )
+        retained_body_len = max(limit - len(marker), 0)
+        truncated_text = f"{output[:retained_body_len]}{marker}"
+
         omitted = RetentionOmitted(
             kind="exact",
             content_type="text",
             original_length=len(output),
-            retained_length=limit,
-        )
-        truncated_text = (
-            f"{output[:limit]}\n\n"
-            f"[Omitted: kind={omitted.kind}, original_length={omitted.original_length}, retained_length={omitted.retained_length}]"
+            retained_length=len(truncated_text),
         )
         return truncated_text, omitted
 
