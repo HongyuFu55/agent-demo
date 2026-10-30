@@ -217,7 +217,7 @@ async def read_history(session_id: str, user_id: int) -> HistoryRead:
 
 
 async def read_history_for_llm(session_id: str, user_id: Optional[int] = None) -> list[dict]:
-    """读取会话历史并转换为可供 LangGraph/LLM 消费的消息字典列表.
+    """读取会话历史并转换为可供 LangGraph/LLM 消费的消息字典列表 (无展示层 10000 字符硬截断).
 
     参数：
         session_id: 会话 ID。
@@ -226,5 +226,47 @@ async def read_history_for_llm(session_id: str, user_id: Optional[int] = None) -
     返回：
         list[dict]: 历史消息列表（字典形式，包含 role 与 content）。
     """
-    history_read = await read_history(session_id, user_id=user_id or 0)
-    return [msg.model_dump() for msg in history_read.messages]
+    uid = user_id or 0
+    if settings.SESSION_EVENT_READ_SOURCE == "chat_message":
+        rows = await database_service.get_chat_messages(session_id, uid)
+        chat_history_reads_total.labels(source=HistorySource.CHAT_MESSAGE.value).inc()
+        result: list[dict] = []
+        for row in rows:
+            if row.question and str(row.question).strip():
+                result.append({"role": "user", "content": str(row.question)})
+            if row.answer and str(row.answer).strip():
+                result.append({"role": "assistant", "content": str(row.answer)})
+        return result
+
+    records: Sequence[EventRecord] = await event_store.read(session_id)
+    if not records:
+        rows = await database_service.get_chat_messages(session_id, uid)
+        if rows:
+            logger.warning(
+                "history_read_fallback_to_chat_message",
+                session_id=session_id,
+                rows=len(rows),
+                hint="该会话没有事件日志，建议执行 scripts/replay_session.py --backfill",
+            )
+            chat_history_reads_total.labels(source=HistorySource.CHAT_MESSAGE_FALLBACK.value).inc()
+            result = []
+            for row in rows:
+                if row.question and str(row.question).strip():
+                    result.append({"role": "user", "content": str(row.question)})
+                if row.answer and str(row.answer).strip():
+                    result.append({"role": "assistant", "content": str(row.answer)})
+            return result
+        chat_history_reads_total.labels(source=HistorySource.PROJECTION.value).inc()
+        return []
+
+    state = EventStore.fold_records(records, MESSAGES, balanced=True)
+    chat_history_reads_total.labels(source=HistorySource.PROJECTION.value).inc()
+    result = []
+    for item in state.get("messages", []):
+        content = str(item.get("content") or "")
+        if content.strip():
+            result.append({
+                "role": _coerce_role(item.get("role")),
+                "content": content,
+            })
+    return result
