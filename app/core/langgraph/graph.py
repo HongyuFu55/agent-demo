@@ -214,10 +214,15 @@ class LangGraphAgent:
             ctx = await default_context_pipeline.execute(ctx)
             system_prompt = ctx.system_prompt
 
-        # P1-B 混合消息派生 (方案 B 解决 S3)：
+        # P1-B 混合消息派生 (方案 A 游标切片解决 B2 历史消息翻倍)：
         # 拼接顺序：历史在前（只读投影），当前活跃轮在后（完整 AIMessage ↔ ToolMessage 配对）
         history_msgs = getattr(state, "history_messages", None) or []
-        combined_messages = [*history_msgs, *state.messages]
+        if settings.LLM_CONTEXT_SOURCE == "projection":
+            turn_start = getattr(state, "turn_start_index", 0) or 0
+            active_messages = state.messages[turn_start:]
+            combined_messages = [*history_msgs, *active_messages]
+        else:
+            combined_messages = list(state.messages)
         messages = prepare_messages(combined_messages, system_prompt)
 
         try:
@@ -417,12 +422,14 @@ class LangGraphAgent:
                     )
                 else:
                     history = []
+                turn_start_index = len(state.values.get("messages", [])) if state and state.values else 0
                 response = await graph.ainvoke(
                     input={
                         "messages": [latest_user_message.model_dump()],
                         "history_messages": history,
                         "long_term_memory": relevant_memory,
                         "assembled_context": None,
+                        "turn_start_index": turn_start_index,
                     },
                     config=config,
                 )
@@ -512,11 +519,13 @@ class LangGraphAgent:
                     )
                 else:
                     history = []
+                turn_start_index = len(state.values.get("messages", [])) if state and state.values else 0
                 graph_input = {
                     "messages": [latest_user_message.model_dump()],
                     "history_messages": history,
                     "long_term_memory": relevant_memory,
                     "assembled_context": None,
+                    "turn_start_index": turn_start_index,
                 }
 
             seen_tool_names: set[str] = set()

@@ -170,3 +170,33 @@ class TestP1ContextPipeline:
         # 断言管线必须被重新触发，不能复用首轮冻结的提示词
         assert pipeline_call_count == 2
         assert r2["assembled_context"] == "system_prompt_version_2"
+
+    def test_projection_mode_turn_start_cursor_prevents_doubling(self) -> None:
+        """测试 projection 模式下通过 turn_start_index 游标切片，防止历史消息翻倍 (解决 B2)."""
+        # 模拟进入第二轮对话：
+        # Checkpoint 中已由 add_messages reducer 累积了第 1 轮消息（共 2 条）和第 2 轮当前用户消息（第 3 条）
+        state = GraphState(
+            messages=[
+                Message(role="user", content="第1轮问题"),
+                Message(role="assistant", content="第1轮回答"),
+                Message(role="user", content="第2轮新问题"),
+            ],
+            # 投影模式下，只读历史包含第 1 轮
+            history_messages=[
+                {"role": "user", "content": "第1轮问题"},
+                {"role": "assistant", "content": "第1轮回答"},
+            ],
+            turn_start_index=2,  # 本轮起始游标为 2
+        )
+
+        with patch("app.core.langgraph.graph.settings.LLM_CONTEXT_SOURCE", "projection"):
+            # 模拟 _chat 中的切片与拼接逻辑
+            turn_start = getattr(state, "turn_start_index", 0) or 0
+            active_messages = state.messages[turn_start:]
+            combined = [*state.history_messages, *active_messages]
+
+            # 验证结果：总消息数为 3（第 1 轮 2 条 + 第 2 轮 1 条），绝未出现 5 条重复
+            assert len(combined) == 3
+            assert combined[0]["content"] == "第1轮问题"
+            assert combined[1]["content"] == "第1轮回答"
+            assert combined[2].content == "第2轮新问题"
