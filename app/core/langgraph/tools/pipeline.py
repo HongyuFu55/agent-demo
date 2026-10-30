@@ -142,14 +142,16 @@ class ToolPipeline:
 
         try:
             # 仅做统一超时保护，重试完全交由 LangGraph 节点级的 RetryPolicy
+            timeout_sec = float(getattr(settings, "TOOL_TIMEOUT_SECONDS", 120))
             tool_result = await asyncio.wait_for(
                 tool_instance.ainvoke(tool_input),
-                timeout=float(settings.LLM_TOTAL_TIMEOUT),
+                timeout=timeout_sec,
             )
             return str(tool_result)
         except asyncio.TimeoutError:
-            logger.warning("tool_execution_timeout", name=tool_name, timeout=settings.LLM_TOTAL_TIMEOUT)
-            return f"工具 [{tool_name}] 执行超时（超过 {settings.LLM_TOTAL_TIMEOUT} 秒），已终止该操作。"
+            timeout_sec = getattr(settings, "TOOL_TIMEOUT_SECONDS", 120)
+            logger.warning("tool_execution_timeout", name=tool_name, timeout=timeout_sec)
+            return f"工具 [{tool_name}] 执行超时（超过 {timeout_sec} 秒），已终止该操作。"
         except Exception as e:
             logger.warning(
                 "tool_execution_exception",
