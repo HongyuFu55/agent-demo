@@ -52,6 +52,7 @@ from app.core.langgraph.pipeline import (
     default_context_pipeline,
 )
 from app.core.langgraph.tools import static_tools, load_all_tools
+from app.core.langgraph.tools.approval import ApprovalRegistry
 from app.core.langgraph.tools.pipeline import (
     ToolPipeline,
     ToolPipelineContext,
@@ -278,11 +279,29 @@ class LangGraphAgent:
             tools_by_name=self.tools_by_name,
         )
 
-        # 单个工具调用直接 await，多个工具调用并发执行以节省等待时间
-        if len(tool_calls) == 1:
-            outputs = [await ToolPipeline.dispatch(tool_calls[0], ctx)]
+        approval_calls = [tc for tc in tool_calls if ApprovalRegistry.is_approval_required(tc.get("name", ""))]
+        normal_calls = [tc for tc in tool_calls if not ApprovalRegistry.is_approval_required(tc.get("name", ""))]
+
+        outputs_map: dict[str, ToolMessage] = {}
+
+        # 1. 优先串行执行高危审批工具（若触发 interrupt 挂起，普通工具不会提前执行产生副作用）
+        for tc in approval_calls:
+            msg = await ToolPipeline.dispatch(tc, ctx)
+            outputs_map[tc["id"]] = msg
+
+        # 2. 审批通过或无审批工具后，执行普通工具（单个直接执行，多个并发执行以节省时间）
+        if len(normal_calls) == 1:
+            normal_msgs = [await ToolPipeline.dispatch(normal_calls[0], ctx)]
+        elif len(normal_calls) > 1:
+            normal_msgs = list(await asyncio.gather(*[ToolPipeline.dispatch(tc, ctx) for tc in normal_calls]))
         else:
-            outputs = list(await asyncio.gather(*[ToolPipeline.dispatch(tc, ctx) for tc in tool_calls]))
+            normal_msgs = []
+
+        for tc, msg in zip(normal_calls, normal_msgs, strict=False):
+            outputs_map[tc["id"]] = msg
+
+        # 按原始 tool_calls 顺序还原输出列表
+        outputs = [outputs_map[tc["id"]] for tc in tool_calls]
 
         return Command(update={"messages": outputs}, goto="chat")
 
