@@ -422,6 +422,7 @@ class LangGraphAgent:
                         "messages": [latest_user_message.model_dump()],
                         "history_messages": history,
                         "long_term_memory": relevant_memory,
+                        "assembled_context": None,
                     },
                     config=config,
                 )
@@ -515,6 +516,7 @@ class LangGraphAgent:
                     "messages": [latest_user_message.model_dump()],
                     "history_messages": history,
                     "long_term_memory": relevant_memory,
+                    "assembled_context": None,
                 }
 
             seen_tool_names: set[str] = set()

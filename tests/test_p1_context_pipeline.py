@@ -21,6 +21,9 @@ from app.core.langgraph.pipeline.context import (
 )
 from app.schemas.graph import GraphState
 from app.schemas.chat import Message
+from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, StateGraph
 from app.utils.graph import dump_messages, prepare_messages
 
 
@@ -128,3 +131,42 @@ class TestP1ContextPipeline:
         assert prepared[-1].content == "最新的活跃轮问题"
         # 原始 combined 数据结构完整无损
         assert len(combined) == 11
+
+    def test_assembled_context_reset_across_turns(self) -> None:
+        """测试同一 thread 连续两轮交互，第二轮 assembled_context 必须重新装配 (覆盖 B1 缺陷)."""
+        pipeline_call_count = 0
+
+        def mock_chat_node(state: GraphState):
+            nonlocal pipeline_call_count
+            if state.assembled_context:
+                prompt = state.assembled_context
+            else:
+                pipeline_call_count += 1
+                prompt = f"system_prompt_version_{pipeline_call_count}"
+            return {"messages": [AIMessage(content="reply")], "assembled_context": prompt}
+
+        builder = StateGraph(GraphState)
+        builder.add_node("chat", mock_chat_node)
+        builder.set_entry_point("chat")
+        builder.add_edge("chat", END)
+        checkpointer = MemorySaver()
+        graph = builder.compile(checkpointer=checkpointer)
+
+        config = {"configurable": {"thread_id": "thread_b1_verify"}}
+
+        # 第一轮交互：首轮装配提示词
+        r1 = graph.invoke(
+            {"messages": [HumanMessage(content="你好")], "assembled_context": None},
+            config=config,
+        )
+        assert pipeline_call_count == 1
+        assert r1["assembled_context"] == "system_prompt_version_1"
+
+        # 第二轮交互：传入 assembled_context: None（对齐 B1 修复）
+        r2 = graph.invoke(
+            {"messages": [HumanMessage(content="现在几点")], "assembled_context": None},
+            config=config,
+        )
+        # 断言管线必须被重新触发，不能复用首轮冻结的提示词
+        assert pipeline_call_count == 2
+        assert r2["assembled_context"] == "system_prompt_version_2"
