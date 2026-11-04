@@ -167,10 +167,10 @@ async def login(
         HTTPException: 凭证无效时抛出。
     """
     try:
-        # 清理输入
-        email = sanitize_string(email)
-        password = sanitize_string(password)
-        grant_type = sanitize_string(grant_type)
+        # 规范化输入：邮箱做大小写归一；密码必须原样传给 bcrypt（不能做 HTML 转义，
+        # 否则含 & < > " ' 等合法特殊字符的密码将永远无法登录）
+        email = sanitize_email(email)
+        grant_type = grant_type.strip()
 
         # 校验授权类型
         if grant_type != "password":

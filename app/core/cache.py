@@ -4,6 +4,7 @@
 否则回退到简单的内存 TTL 缓存。
 """
 
+import fnmatch
 import hashlib
 import time
 from typing import (
@@ -84,6 +85,13 @@ class InMemoryCacheService:
             key: 缓存 key。
         """
         self._cache.pop(key, None)
+
+    async def delete_pattern(self, pattern: str) -> int:
+        """按 glob 通配符批量删除内存缓存键，返回删除条数."""
+        matched = [k for k in self._cache if fnmatch.fnmatch(k, pattern)]
+        for k in matched:
+            self._cache.pop(k, None)
+        return len(matched)
 
     async def close(self) -> None:
         """清空内存缓存."""
@@ -166,6 +174,28 @@ class ValkeyCacheService:
             await self._client.delete(key)
         except Exception as e:
             logger.warning("cache_delete_failed", key=key, error=str(e))
+
+    @property
+    def redis(self) -> Optional[Redis]:
+        """返回底层异步 Redis 客户端（供消息队列等直接使用 Stream 命令）."""
+        return self._client
+
+    async def delete_pattern(self, pattern: str) -> int:
+        """按 glob 通配符批量删除 Valkey 缓存键，返回删除条数."""
+        if not self._client:
+            return 0
+        deleted = 0
+        try:
+            cursor = 0
+            while True:
+                cursor, keys = await self._client.scan(cursor=cursor, match=pattern, count=100)
+                if keys:
+                    deleted += await self._client.delete(*keys)
+                if cursor == 0:
+                    break
+        except Exception as e:
+            logger.warning("cache_delete_pattern_failed", pattern=pattern, error=str(e))
+        return deleted
 
     async def close(self) -> None:
         """关闭 Valkey 连接."""

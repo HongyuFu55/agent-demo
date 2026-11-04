@@ -1,16 +1,14 @@
 """基于 mem0 和 pgvector 的长期记忆服务，带可选缓存层与防污染双层防御机制."""
 
 import asyncio
+import hashlib
 import os
 import re
 from typing import Any
 
 from mem0 import AsyncMemory
 
-from app.core.cache import (
-    cache_key,
-    cache_service,
-)
+from app.core.cache import cache_service
 from app.core.config import settings
 from app.core.logging import logger
 
@@ -198,8 +196,9 @@ class MemoryService:
             return ""
 
         try:
-            # 增加缓存前缀与 TTL 保护（建议 TTL 设为 300~600 秒）
-            key = cache_key("memory", str(user_id), query.strip())
+            # 缓存 key 显式携带 user_id，便于按用户维度通配失效（见 _invalidate_user_cache）
+            query_hash = hashlib.sha256(query.strip().encode("utf-8")).hexdigest()[:16]
+            key = f"memory:{user_id}:{query_hash}"
             cached = await cache_service.get(key)
             if cached is not None:
                 logger.debug("长期记忆命中缓存", user_id=user_id)
@@ -261,12 +260,7 @@ class MemoryService:
     async def _invalidate_user_cache(self, user_id: str) -> None:
         """清理该用户的旧搜索缓存，确保记忆实时一致."""
         try:
-            # 如果 cache_service 支持通配符删除或前缀扫描：
-            delete_fn = getattr(cache_service, "delete_pattern", None)
-            if delete_fn is not None:
-                res = delete_fn(f"*memory:{user_id}:*")
-                if asyncio.iscoroutine(res):
-                    await res
+            await cache_service.delete_pattern(f"memory:{user_id}:*")
         except Exception as e:
             logger.warning("清理用户记忆缓存失败", user_id=user_id, error=str(e))
 

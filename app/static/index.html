@@ -2302,7 +2302,7 @@
 
               let attachHtml = '';
               if (isImage && filePath) {
-                const imgUrl = `/workspace/${filePath}`;
+                const imgUrl = `/api/v1/files/${currentSessionId}/${encodeURIComponent(fileName)}?token=${encodeURIComponent(currentToken)}`;
                 attachHtml = `<div style="margin-bottom: 0.5rem;">
                   <img src="${imgUrl}" class="chat-img-thumb" alt="${escapeHtml(fileName)}" title="点击放大查看高清大图 🔍" onclick="openImageModal('${imgUrl}', '${escapeHtml(fileName)}')" />
                 </div>`;
@@ -2826,7 +2826,7 @@
         // 结构化隐式携带相对路径，Agent 自动感知并无感调用工具
         payloadContent = `[附件文件: ${currentAttachment.relative_path}]\n${payloadContent}`;
         // 前端用户展示：渲染带点击放大事件的缩略图
-        const previewSrc = currentAttachment.localPreviewUrl || `/workspace/${currentAttachment.relative_path}`;
+        const previewSrc = currentAttachment.localPreviewUrl || `/api/v1/files/${currentSessionId}/${encodeURIComponent(currentAttachment.file_name)}?token=${encodeURIComponent(currentToken)}`;
         const fileName = escapeHtml(currentAttachment.file_name);
         const attachBadge = currentAttachment.localPreviewUrl
           ? `<div style="margin-bottom: 0.5rem;"><img src="${previewSrc}" class="chat-img-thumb" alt="${fileName}" title="点击放大查看高清大图 🔍" onclick="openImageModal('${previewSrc}', '${fileName}')" /></div>`

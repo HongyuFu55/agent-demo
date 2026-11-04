@@ -35,22 +35,21 @@ def sanitize_string(value: str) -> str:
 
 
 def sanitize_email(email: str) -> str:
-    """清理邮箱地址.
+    """规范化邮箱地址：去空白/空字节 + 大小写归一，不做 HTML 转义.
 
-    参数：
-        email: 要清理的邮箱地址。
-
-    返回：
-        str: 清理后的邮箱地址。
+    邮箱是数据字段，入库前做 HTML 转义会破坏原始数据，并导致注册/登录两端
+    邮箱不一致（例如 ``a@b.com`` 被转义成 ``a@b.com`` 之外的形式）。
     """
-    # 基础清理
-    email = sanitize_string(email)
+    if not isinstance(email, str):
+        email = str(email)
+
+    email = email.strip().replace("\0", "").lower()
 
     # 确保邮箱格式正确（简单检查）
     if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email):
         raise ValueError("Invalid email format")
 
-    return email.lower()
+    return email
 
 
 def sanitize_dict(data: Dict[str, Any]) -> Dict[str, Any]:

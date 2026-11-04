@@ -185,10 +185,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 # 配置 CORS 中间件
+# 本应用鉴权走 Authorization: Bearer 头，不依赖 Cookie，因此关闭 allow_credentials；
+# 否则 allow_origins=["*"] 与 allow_credentials=True 组合会回显任意来源，等于放行任意站点携带凭证。
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -201,10 +203,8 @@ static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-# 挂载工作区目录供前端预览查看上传文件
-workspace_dir = Path(__file__).parent.parent / "storage" / "workspace"
-workspace_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/workspace", StaticFiles(directory=str(workspace_dir)), name="workspace")
+# 挂载工作区目录供前端预览查看上传文件（已移除公开挂载，改由鉴权下载接口提供：
+# 见 app/api/v1/chatbot.py 的 GET /files/{session_id}/{file_name}）
 
 # 挂载 MCP Server 路由 (供外部 MCP 客户端通过 SSE/HTTP 连接)
 if settings.MCP_SERVER_ENABLED:

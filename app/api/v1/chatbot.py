@@ -3,6 +3,7 @@
 本模块提供普通聊天、流式聊天、消息历史查询和聊天历史清理接口。
 """
 
+import mimetypes
 import re
 from datetime import datetime
 from pathlib import Path
@@ -12,13 +13,14 @@ from fastapi import (
     Depends,
     File,
     Form,
+    Header,
     HTTPException,
     Query,
     Request,
     Response,
     UploadFile,
 )
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from app.api.v1.auth import get_current_user
 from app.core.config import settings
@@ -47,6 +49,7 @@ from app.services.events import (
     record_turn,
 )
 from app.services.session_naming import maybe_name_session
+from app.utils.auth import verify_token
 
 router = APIRouter()
 agent = LangGraphAgent()
@@ -518,4 +521,51 @@ async def upload_file(
     except Exception as e:
         logger.exception("file_upload_failed", user_id=user.id, session_id=session_id, error=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to process file upload: {str(e)}")
+
+
+@router.get("/files/{session_id}/{file_name}")
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["files"][0])
+async def download_file(
+    request: Request,
+    session_id: str,
+    file_name: str,
+    token: str = Query(default="", description="JWT 令牌（<img> 无法携带 Authorization 头，故支持 query 传递）"),
+    authorization: str = Header(default="", alias="Authorization"),
+):
+    """鉴权下载当前用户会话内的上传文件（替代此前无鉴权的 /workspace 静态挂载）."""
+    # 解析 token：优先 query 参数，其次 Authorization: Bearer
+    raw_token = token.strip() or (authorization[7:].strip() if authorization.lower().startswith("bearer ") else "")
+    if not raw_token:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+
+    try:
+        user_id = verify_token(raw_token)
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid token format")
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+
+    try:
+        user = await database_service.get_user(int(user_id))
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 校验会话归属，防止越权访问他人会话
+    session = await get_owned_session(session_id, user)
+
+    # 防路径穿越：只取纯文件名，且必须落在当前用户会话沙箱目录内
+    safe_name = Path(file_name).name
+    session_dir = (WORKSPACE_DIR / "users" / str(user.id) / str(session.id)).resolve()
+    target = (session_dir / safe_name).resolve()
+    try:
+        target.relative_to(session_dir)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    media_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+    return FileResponse(target, media_type=media_type)
 

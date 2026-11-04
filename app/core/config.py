@@ -62,7 +62,7 @@ def load_env_file():
     # 加载第一个存在的环境变量文件
     for env_file in env_files:
         if os.path.isfile(env_file):
-            load_dotenv(dotenv_path=env_file)
+            load_dotenv(dotenv_path=env_file, override=True)
             print(f"Loaded environment from {env_file}")
             return env_file
 
@@ -167,8 +167,10 @@ class Settings:
         self.QWEATHER_PRIVATE_KEY = os.getenv("QWEATHER_PRIVATE_KEY", "")
 
         self.DASHSCOPE_BASE_URL = os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-        self.DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "gpt-5-mini")
+        self.DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "qwen-plus")
         self.SESSION_NAMING_ENABLED = os.getenv("SESSION_NAMING_ENABLED", "true").lower() == "true"
+        # 会话自动命名使用注册表里的轻量快速模型（见 app/services/llm/registry.py）
+        self.SESSION_NAMING_MODEL = os.getenv("SESSION_NAMING_MODEL", "qwen-turbo")
         # 会话事件日志开关。开启后每轮对话会写 session_event（影子写入），
         # 可用 scripts/replay_session.py 校验投影与 chat_message 是否一致。
         self.SESSION_EVENTS_ENABLED = os.getenv("SESSION_EVENTS_ENABLED", "true").lower() in ("true", "1", "yes")
@@ -213,6 +215,13 @@ class Settings:
         self.JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
         self.JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
         self.JWT_ACCESS_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_DAYS", "30"))
+
+        # 安全加固：JWT 密钥为空会导致 token 可被任意伪造
+        if not self.JWT_SECRET_KEY:
+            if self.ENVIRONMENT == Environment.PRODUCTION:
+                raise ValueError("JWT_SECRET_KEY must be set to a non-empty value in production")
+            self.JWT_SECRET_KEY = "dev-insecure-jwt-secret-do-not-use-in-prod"
+            print("WARNING: JWT_SECRET_KEY is empty; using insecure dev-only fallback (NOT for production)")
 
         # 日志配置
         self.LOG_DIR = Path(os.getenv("LOG_DIR", "logs"))
@@ -268,6 +277,7 @@ class Settings:
             "login": ["20 per minute"],
             "root": ["10 per minute"],
             "health": ["20 per minute"],
+            "files": ["60 per minute"],
         }
 
         # 使用环境变量更新接口限流配置
