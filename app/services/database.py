@@ -212,7 +212,7 @@ class DatabaseService:
         """
         with Session(self.engine) as session:
             statement = (
-                select(ChatSession).where(col(ChatSession.user_id) == user_id).order_by(col(ChatSession.created_at))
+                select(ChatSession).where(col(ChatSession.user_id) == user_id).order_by(col(ChatSession.created_at).desc())
             )
             sessions = session.exec(statement).all()
             return list(sessions)

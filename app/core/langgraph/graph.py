@@ -227,12 +227,17 @@ class LangGraphAgent:
         messages = prepare_messages(combined_messages, system_prompt)
 
         try:
-            # 使用带自动重试和循环 fallback 的 LLM 服务
+            # 流式调用：逐块产出（供 stream_mode="messages" 逐字下发），结束时合并成完整消息
+            merged_chunk: Optional[AIMessageChunk] = None
             with llm_inference_duration_seconds.labels(model=model_name).time():
-                response_message = await self.llm_service.call(dump_messages(messages))
+                async for chunk in self.llm_service.stream(dump_messages(messages)):
+                    merged_chunk = chunk if merged_chunk is None else merged_chunk + chunk
 
-            # 处理响应，兼容结构化内容块
-            response_message = process_llm_response(response_message)
+            if merged_chunk is None:
+                raise Exception("llm stream returned no output chunks")
+
+            # 处理响应，兼容结构化内容块（合并后的 chunk 已含 tool_calls）
+            response_message = process_llm_response(merged_chunk)
 
             logger.info("大模型回答已生成", session_id=thread_id, model=model_name)
 

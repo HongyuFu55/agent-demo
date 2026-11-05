@@ -4,6 +4,7 @@ import asyncio
 import logging
 from typing import (
     Any,
+    AsyncGenerator,
     Callable,
     List,
     Optional,
@@ -137,6 +138,43 @@ class LLMService:
                 timeout_seconds=settings.LLM_TOTAL_TIMEOUT,
             )
             raise RuntimeError(f"llm call timed out after {settings.LLM_TOTAL_TIMEOUT}s total budget")
+
+    async def stream(
+        self,
+        messages: LanguageModelInput,
+        model_name: Optional[str] = None,
+        **model_kwargs: Any,
+    ) -> AsyncGenerator[Any, None]:
+        """流式调用 LLM，逐块产出消息；失败时按注册表顺序循环 fallback.
+
+        与 call() 的差异：本方法使用模型的 .astream() 流式接口，产出的每个元素
+        都是 AIMessageChunk，可逐字到达，用于 SSE 逐字输出场景。
+        """
+        if model_name or model_kwargs:
+            all_names = LLMRegistry.get_all_names()
+            if model_name and model_name not in all_names:
+                raise ValueError(
+                    f"model '{model_name}' not found in registry. available models: {', '.join(all_names)}"
+                )
+            start = all_names.index(model_name) if model_name else self._current_model_index
+            total = len(LLMRegistry.LLMS)
+
+            def get_target(idx: int) -> Any:
+                return LLMRegistry.get(LLMRegistry.LLMS[idx]["name"], **model_kwargs)
+
+            def advance(idx: int) -> Optional[int]:
+                return (idx + 1) % total
+        else:
+            start = self._current_model_index
+
+            def get_target(_: int) -> Any:
+                return self._llm
+
+            def advance(_: int) -> Optional[int]:
+                return self._current_model_index if self._switch_to_next_model() else None
+
+        async for chunk in self._stream_fallback_loop(messages, start, get_target, advance):
+            yield chunk
 
     def get_llm(self) -> Any:
         """返回当前已绑定工具的默认 LLM 实例.
@@ -334,6 +372,49 @@ class LLMService:
 
         raise RuntimeError(
             f"failed to get response from llm after trying {models_tried} models. last error: {str(last_error)}"
+        )
+
+    async def _stream_fallback_loop(
+        self,
+        messages: LanguageModelInput,
+        start: int,
+        get_target: Callable[[int], Any],
+        advance: Callable[[int], Optional[int]],
+    ) -> AsyncGenerator[Any, None]:
+        """共享流式 fallback 循环：依次尝试每个模型，直到流式产出成功.
+
+        每个模型内部直接使用 .astream() 产出；某个模型流式失败时切换到下一个模型
+        重新流式（与 _fallback_loop 的非流式逻辑保持一致）。
+        """
+        total = len(LLMRegistry.LLMS)
+        current = start
+        last_error: Optional[Exception] = None
+
+        for models_tried in range(1, total + 1):
+            current_name = LLMRegistry.LLMS[current]["name"]
+            try:
+                async for chunk in get_target(current).astream(messages):
+                    yield chunk
+                return
+            except (RateLimitError, APITimeoutError, APIError, OpenAIError) as e:
+                last_error = e
+                logger.error(
+                    "当前大模型流式调用失败",
+                    model=current_name,
+                    models_tried=models_tried,
+                    total_models=total,
+                    error=str(e),
+                )
+                if models_tried >= total:
+                    break
+                next_idx = advance(current)
+                if next_idx is None:
+                    logger.error("failed_to_switch_to_next_model")
+                    break
+                current = next_idx
+
+        raise RuntimeError(
+            f"failed to stream response from llm after trying {models_tried} models. last error: {str(last_error)}"
         )
 
 

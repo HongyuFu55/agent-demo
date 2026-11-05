@@ -84,6 +84,7 @@
       --accent-subtle: rgba(59, 130, 246, 0.12);
       --accent-border: rgba(59, 130, 246, 0.3);
       --accent-emerald: #10b981;
+      --accent-green: #10b981; /* 语义别名：兼容会话列表/诊断面板的旧引用 */
       --accent-rose: #f43f5e;
       --accent-amber: #f59e0b;
 
@@ -421,6 +422,91 @@
       text-overflow: ellipsis;
       max-width: 160px;
       color: var(--text-main);
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* Session list states */
+    .session-list-loading,
+    .session-list-empty,
+    .session-list-error {
+      text-align: center;
+      padding: 1rem 0.5rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .session-list-error {
+      color: #fda4af;
+    }
+
+    .session-search {
+      width: 100%;
+      margin-bottom: 0.6rem;
+      padding: 7px 10px;
+      font-size: 0.78rem;
+      background: var(--bg-surface-2);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      color: var(--text-main);
+      transition: border-color var(--transition-color);
+    }
+
+    .session-search:hover { border-color: var(--border-medium); }
+    .session-search:focus {
+      outline: none;
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 1px var(--border-focus);
+    }
+
+    .session-delete-btn {
+      flex-shrink: 0;
+      width: 26px;
+      height: 26px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity var(--transition-color), color var(--transition-color), background var(--transition-color);
+    }
+
+    .session-item:hover .session-delete-btn,
+    .session-item:focus-within .session-delete-btn {
+      opacity: 1;
+    }
+
+    .session-delete-btn:hover {
+      color: #fda4af;
+      background: rgba(244, 63, 94, 0.1);
+    }
+
+    .session-delete-btn:focus-visible {
+      outline: none;
+      opacity: 1;
+      box-shadow: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--border-focus);
+    }
+
+    /* Auth form feedback */
+    .auth-error {
+      display: none;
+      margin-top: 0.6rem;
+      padding: 0.5rem 0.7rem;
+      font-size: 0.78rem;
+      color: #fda4af;
+      background: rgba(244, 63, 94, 0.08);
+      border: 1px solid rgba(244, 63, 94, 0.25);
+      border-radius: var(--radius-sm);
+      line-height: 1.5;
+    }
+
+    .auth-error.show {
+      display: block;
     }
 
     /* Chat View */
@@ -1279,12 +1365,15 @@
 
       <!-- Session Tab Content (Default Active) -->
       <div class="panel-body" id="tab-content-session">
+        <input id="session-search" class="session-search" type="search" placeholder="搜索会话…" aria-label="搜索会话" oninput="filterSessions()" />
         <div style="display: flex; gap: 0.5rem; margin-bottom: 0.8rem;">
           <button class="btn btn-primary" onclick="createNewSession()" style="flex: 1;">+ 新建会话</button>
-          <button class="btn" onclick="fetchSessions()" title="刷新会话">🔄</button>
+          <button class="btn" onclick="fetchSessions()" title="刷新会话" aria-label="刷新会话">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+          </button>
         </div>
         <div id="sessions-list" class="session-list">
-          <div style="color: var(--text-dim); font-size: 0.8rem; text-align: center; padding: 1rem;">正在加载会话...</div>
+          <div class="session-list-loading">正在加载会话…</div>
         </div>
       </div>
 
@@ -1298,16 +1387,17 @@
 
         <div id="auth-form-container">
           <div class="form-group">
-            <label class="form-label">邮箱</label>
-            <input type="email" id="auth-email" class="input-control" placeholder="user@example.com" value="testuser@example.com" />
+            <label class="form-label" for="auth-email">邮箱</label>
+            <input type="email" id="auth-email" class="input-control" placeholder="user@example.com" autocomplete="email" value="" />
           </div>
           <div class="form-group">
-            <label class="form-label">密码</label>
-            <input type="password" id="auth-password" class="input-control" placeholder="Password123!" value="Password123!" />
+            <label class="form-label" for="auth-password">密码</label>
+            <input type="password" id="auth-password" class="input-control" placeholder="Password123!" autocomplete="current-password" value="" />
           </div>
+          <div id="auth-error" class="auth-error" role="alert" aria-live="polite"></div>
           <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
-            <button class="btn btn-primary" onclick="login()" style="flex: 1;">登录</button>
-            <button class="btn" onclick="register()" style="flex: 1;">注册</button>
+            <button class="btn btn-primary" id="login-btn" onclick="login()" style="flex: 1;">登录</button>
+            <button class="btn" id="register-btn" onclick="register()" style="flex: 1;">注册</button>
           </div>
         </div>
 
@@ -1317,15 +1407,6 @@
         </div>
       </div>
 
-      <!-- Session Tab Content -->
-      <div class="panel-body" id="tab-content-session" style="display: none;">
-        <button class="btn btn-primary" onclick="createNewSession()" style="width: 100%; margin-bottom: 0.8rem;">
-          + 新建聊天会话
-        </button>
-        <div id="sessions-list">
-          <div style="color: var(--text-dim); font-size: 0.8rem; text-align: center; padding: 1rem;">请先登录以获取会话</div>
-        </div>
-      </div>
     </aside>
 
     <!-- Middle Panel: Agent Playground -->
@@ -1928,46 +2009,18 @@
       checkHealth();
       setInterval(checkHealth, 10000);
 
+      bindSessionListEvents();
       if (!currentToken) {
-        await autoSilentLogin();
+        updateAuthUI(false);
+        switchLeftTab('auth');
       } else {
         document.getElementById('jwt-token-display').value = currentToken;
         updateAuthUI(true, currentUserEmail);
+        switchLeftTab('session');
         await fetchSessions();
         fetchRAGStats();
       }
     });
-
-    // Auto Silent Login (免认证无感直达)
-    async function autoSilentLogin() {
-      const email = 'testuser@example.com';
-      const password = 'Password123!';
-      const formData = new URLSearchParams();
-      formData.append('email', email);
-      formData.append('password', password);
-      formData.append('grant_type', 'password');
-
-      try {
-        const res = await fetch(`${API_BASE}/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: formData
-        });
-        const data = await res.json();
-        if (res.ok && data.access_token) {
-          currentToken = data.access_token;
-          currentUserEmail = email;
-          localStorage.setItem('jwt_token', currentToken);
-          localStorage.setItem('current_user_email', currentUserEmail);
-          document.getElementById('jwt-token-display').value = currentToken;
-          updateAuthUI(true, email);
-          await fetchSessions();
-          fetchRAGStats();
-        }
-      } catch (err) {
-        console.warn('Auto silent login skipped:', err);
-      }
-    }
 
     // Auto Resize Textarea (ChatGPT / DeepSeek style)
     function autoResizeTextarea(el) {
@@ -1997,6 +2050,10 @@
 
     // Tab Switch
     function switchLeftTab(tabName) {
+      if (tabName === 'session' && !currentToken) {
+        redirectToAuth('请先登录后再查看会话');
+        return;
+      }
       document.getElementById('tab-btn-auth').classList.toggle('active', tabName === 'auth');
       document.getElementById('tab-btn-session').classList.toggle('active', tabName === 'session');
       document.getElementById('tab-content-auth').style.display = tabName === 'auth' ? 'block' : 'none';
@@ -2012,7 +2069,7 @@
       if (!dotEl || !textEl || !pingEl) return;
 
       try {
-        const res = await fetch(`${API_BASE}/health`);
+        const res = await fetch('/health');
         const latency = Math.round(performance.now() - startTime);
         pingEl.innerText = `${latency} ms`;
 
@@ -2038,11 +2095,56 @@
       document.getElementById('current-user-email').innerText = email;
     }
 
+    // 统一应用登录态（token + 本地存储 + UI）
+    function applyAuth(token, email) {
+      currentToken = token;
+      currentUserEmail = email || currentUserEmail;
+      localStorage.setItem('jwt_token', currentToken);
+      localStorage.setItem('current_user_email', currentUserEmail);
+      document.getElementById('jwt-token-display').value = currentToken;
+      updateAuthUI(true, currentUserEmail);
+      hideAuthError();
+    }
+
+    // 认证失效 / 未登录时统一跳回认证页
+    function redirectToAuth(msg) {
+      currentToken = '';
+      localStorage.removeItem('jwt_token');
+      updateAuthUI(false);
+      switchLeftTab('auth');
+      if (msg) showAuthError(msg);
+    }
+
+    function showAuthError(msg) {
+      const el = document.getElementById('auth-error');
+      if (!el) return;
+      el.innerText = msg;
+      el.classList.add('show');
+    }
+
+    function hideAuthError() {
+      const el = document.getElementById('auth-error');
+      if (!el) return;
+      el.innerText = '';
+      el.classList.remove('show');
+    }
+
+    function setBtnLoading(btn, loading, label) {
+      if (!btn) return;
+      btn.disabled = loading;
+      btn.innerText = label;
+      btn.style.opacity = loading ? '0.6' : '';
+    }
+
     // Login Action
     async function login() {
       const email = document.getElementById('auth-email').value.trim();
-      const password = document.getElementById('auth-password').value.trim();
-      if (!email || !password) return alert('请输入邮箱与密码');
+      const password = document.getElementById('auth-password').value; // 密码原样提交，不 trim
+      hideAuthError();
+      if (!email || !password) return showAuthError('请输入邮箱与密码');
+
+      const btn = document.getElementById('login-btn');
+      setBtnLoading(btn, true, '登录中…');
 
       const formData = new URLSearchParams();
       formData.append('email', email);
@@ -2055,30 +2157,29 @@
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: formData
         });
-
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.detail || '登录失败');
 
-        currentToken = data.access_token;
-        currentUserEmail = email;
-        localStorage.setItem('jwt_token', currentToken);
-        localStorage.setItem('current_user_email', currentUserEmail);
-
-        document.getElementById('jwt-token-display').value = currentToken;
-        updateAuthUI(true, email);
-        alert('登录成功！');
-        fetchSessions();
+        applyAuth(data.access_token, email);
+        showGeminiToast('登录成功');
+        await fetchSessions();
         switchLeftTab('session');
       } catch (err) {
-        alert(err.message);
+        showAuthError(err.message || '登录失败，请稍后重试');
+      } finally {
+        setBtnLoading(btn, false, '登录');
       }
     }
 
     // Register Action
     async function register() {
       const email = document.getElementById('auth-email').value.trim();
-      const password = document.getElementById('auth-password').value.trim();
-      if (!email || !password) return alert('请输入邮箱与密码');
+      const password = document.getElementById('auth-password').value; // 密码原样提交
+      hideAuthError();
+      if (!email || !password) return showAuthError('请输入邮箱与密码');
+
+      const btn = document.getElementById('register-btn');
+      setBtnLoading(btn, true, '注册中…');
 
       try {
         const res = await fetch(`${API_BASE}/auth/register`, {
@@ -2087,21 +2188,17 @@
           body: JSON.stringify({ email, password })
         });
 
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.detail || '注册失败');
 
-        currentToken = data.token;
-        currentUserEmail = data.email;
-        localStorage.setItem('jwt_token', currentToken);
-        localStorage.setItem('current_user_email', currentUserEmail);
-
-        document.getElementById('jwt-token-display').value = currentToken;
-        updateAuthUI(true, data.email);
-        alert('注册并登录成功！');
-        fetchSessions();
+        applyAuth(data.token.access_token, data.email);
+        showGeminiToast('注册并登录成功');
+        await fetchSessions();
         switchLeftTab('session');
       } catch (err) {
-        alert(err.message);
+        showAuthError(err.message || '注册失败，请稍后重试');
+      } finally {
+        setBtnLoading(btn, false, '注册');
       }
     }
 
@@ -2110,70 +2207,122 @@
       currentToken = '';
       currentSessionId = '';
       currentUserEmail = '';
-      localStorage.clear();
+      currentMessages = [];
+      localStorage.removeItem('jwt_token');
+      localStorage.removeItem('current_session_id');
+      localStorage.removeItem('current_user_email');
       document.getElementById('jwt-token-display').value = '';
+      document.getElementById('current-session-label').innerText = '(未选择会话)';
       updateAuthUI(false);
-      document.getElementById('sessions-list').innerHTML = '<div style="color: var(--text-dim); font-size: 0.8rem; text-align: center; padding: 1rem;">请先登录以获取会话</div>';
+      switchLeftTab('auth');
+      document.getElementById('sessions-list').innerHTML = '<div class="session-list-empty">请先登录以获取会话</div>';
+      renderMessages();
+      showGeminiToast('已退出登录');
     }
 
     // Fetch Sessions
+    let allSessions = [];
+
+    // 会话列表事件委托：避免在 onclick 里拼接字符串（防 XSS / 引号注入）
+    function bindSessionListEvents() {
+      const list = document.getElementById('sessions-list');
+      if (!list) return;
+      list.addEventListener('click', (e) => {
+        const delBtn = e.target.closest('.session-delete-btn');
+        if (delBtn) {
+          e.stopPropagation();
+          deleteSession(delBtn.dataset.sessionId);
+          return;
+        }
+        const item = e.target.closest('.session-item');
+        if (item) selectSession(item.dataset.sessionId, item.dataset.sessionName);
+      });
+    }
+
+    function renderSessionList(list) {
+      const container = document.getElementById('sessions-list');
+      if (!list || list.length === 0) {
+        container.innerHTML = '<div class="session-list-empty">暂无会话，请新建</div>';
+        return;
+      }
+      container.innerHTML = list.map(s => `
+        <div class="session-item ${s.session_id === currentSessionId ? 'active' : ''}" data-session-id="${s.session_id}" data-session-name="${escapeHtml(s.name || '')}">
+          <span class="session-name">${escapeHtml(s.name || s.session_id.substring(0, 8))}</span>
+          <button class="session-delete-btn" data-session-id="${s.session_id}" aria-label="删除会话" title="删除会话">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      `).join('');
+
+      // 仅在整表重渲染时做一次入场动画
+      if (typeof runAnime === 'function') {
+        runAnime({
+          targets: '.session-item',
+          translateX: [-18, 0],
+          opacity: [0, 1],
+          delay: window.getStagger ? window.getStagger(35) : 35,
+          duration: 400,
+          easing: 'easeOutCubic'
+        });
+      }
+    }
+
+    function renderSessionEmpty(msg) {
+      document.getElementById('sessions-list').innerHTML = `<div class="session-list-empty">${msg}</div>`;
+    }
+
+    function filterSessions() {
+      const q = (document.getElementById('session-search').value || '').trim().toLowerCase();
+      if (!q) return renderSessionList(allSessions);
+      const filtered = allSessions.filter(s => (s.name || s.session_id).toLowerCase().includes(q));
+      renderSessionList(filtered);
+    }
+
     async function fetchSessions() {
-      if (!currentToken) return;
+      if (!currentToken) { redirectToAuth(); return; }
+      const container = document.getElementById('sessions-list');
+      container.innerHTML = '<div class="session-list-loading">正在加载会话…</div>';
       try {
         const res = await fetch(`${API_BASE}/auth/sessions`, {
           headers: { 'Authorization': `Bearer ${currentToken}` }
         });
-        if (!res.ok) return;
-        const sessions = await res.json();
-
-        const container = document.getElementById('sessions-list');
-        if (sessions.length === 0) {
-          container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center;">暂无会话，请新建</div>';
+        if (res.status === 401) { redirectToAuth('登录已过期，请重新登录'); return; }
+        if (!res.ok) {
+          container.innerHTML = '<div class="session-list-error">会话加载失败</div>';
           return;
         }
-
-        container.innerHTML = sessions.map(s => `
-          <div class="session-item ${s.session_id === currentSessionId ? 'active' : ''}" onclick="selectSession('${s.session_id}', '${escapeHtml(s.name)}')">
-            <span class="session-name">💬 ${escapeHtml(s.name || s.session_id.substring(0, 8))}</span>
-            <button class="btn btn-danger" style="font-size: 0.65rem; padding: 0.1rem 0.3rem;" onclick="deleteSession(event, '${s.session_id}')">删除</button>
-          </div>
-        `).join('');
-
-        // Anime.js Stagger animation for session items
-        if (typeof runAnime === 'function') {
-          runAnime({
-            targets: '.session-item',
-            translateX: [-18, 0],
-            opacity: [0, 1],
-            delay: window.getStagger ? window.getStagger(45) : 45,
-            duration: 500,
-            easing: 'easeOutCubic'
-          });
-        }
-
-        if (!currentSessionId && sessions.length > 0) {
-          selectSession(sessions[0].session_id, sessions[0].name);
+        allSessions = await res.json();
+        renderSessionList(allSessions);
+        if (!currentSessionId && allSessions.length > 0) {
+          selectSession(allSessions[0].session_id, allSessions[0].name);
+        } else {
+          highlightActiveSession();
         }
       } catch (err) {
-        console.error(err);
+        container.innerHTML = '<div class="session-list-error">网络错误，加载会话失败</div>';
       }
     }
 
     // Create New Session
     async function createNewSession() {
-      if (!currentToken) return alert('请先登录！');
+      if (!currentToken) return redirectToAuth('请先登录');
       try {
         const res = await fetch(`${API_BASE}/auth/session`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${currentToken}` }
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail);
+        if (res.status === 401) return redirectToAuth('登录已过期，请重新登录');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || '创建会话失败');
 
-        selectSession(data.session_id, data.name);
-        fetchSessions();
+        currentSessionId = data.session_id;
+        localStorage.setItem('current_session_id', data.session_id);
+        document.getElementById('current-session-label').innerText = `(${data.name || data.session_id.substring(0, 8)})`;
+        await fetchSessions();
+        fetchChatHistory();
+        showGeminiToast('已创建新会话');
       } catch (err) {
-        alert(err.message);
+        showGeminiToast(err.message);
       }
     }
 
@@ -2182,25 +2331,41 @@
       currentSessionId = sessionId;
       localStorage.setItem('current_session_id', sessionId);
       document.getElementById('current-session-label').innerText = `(${name || sessionId.substring(0, 8)})`;
-      fetchSessions();
+      highlightActiveSession();
       fetchChatHistory();
     }
 
+    // 仅高亮当前会话，不触发列表重新拉取与动画
+    function highlightActiveSession() {
+      document.querySelectorAll('.session-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.sessionId === currentSessionId);
+      });
+    }
+
     // Delete Session
-    async function deleteSession(e, sessionId) {
-      e.stopPropagation();
+    async function deleteSession(sessionId) {
+      if (!currentToken) return redirectToAuth();
       if (!confirm('确定删除该会话？')) return;
       try {
         const res = await fetch(`${API_BASE}/auth/session/${sessionId}`, {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${currentToken}` }
         });
-        if (res.ok) {
-          if (currentSessionId === sessionId) currentSessionId = '';
-          fetchSessions();
+        if (res.status === 401) return redirectToAuth('登录已过期，请重新登录');
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          showGeminiToast(data.detail || '删除失败');
+          return;
         }
+        if (currentSessionId === sessionId) {
+          currentSessionId = '';
+          localStorage.removeItem('current_session_id');
+          document.getElementById('current-session-label').innerText = '(未选择会话)';
+        }
+        await fetchSessions();
+        showGeminiToast('会话已删除');
       } catch (err) {
-        alert(err.message);
+        showGeminiToast('删除失败: ' + err.message);
       }
     }
 
@@ -2634,7 +2799,7 @@
     let currentAttachment = null;
 
     function triggerFileUpload() {
-      if (!currentToken) return alert('请先登录！');
+      if (!currentToken) return redirectToAuth('请先登录');
       if (!currentSessionId) return alert('请先选择或新建会话！');
       document.getElementById('file-upload-input').click();
     }
@@ -2648,7 +2813,7 @@
     }
 
     async function uploadFile(file) {
-      if (!currentToken) return alert('请先登录！');
+      if (!currentToken) return redirectToAuth('请先登录');
       if (!currentSessionId) return alert('请先选择或新建会话！');
 
       const previewBar = document.getElementById('attachment-preview-bar');
@@ -2808,7 +2973,7 @@
 
     // Send Message
     async function sendMessage() {
-      if (!currentToken) return alert('请先登录！');
+      if (!currentToken) return redirectToAuth('请先登录');
       if (!currentSessionId) return alert('请先选择或新建会话！');
 
       const inputEl = document.getElementById('user-input');
@@ -3191,7 +3356,7 @@
 
     async function ingestRAGFile() {
       if (!selectedRAGFile) return alert('请先点击上方区域选择要上传的文档');
-      if (!currentToken) return alert('请先在左侧登录账号');
+      if (!currentToken) return redirectToAuth('请先登录');
 
       const feedback = document.getElementById('rag-ingest-feedback');
       const btn = document.getElementById('btn-ingest-file');
@@ -3238,7 +3403,7 @@
       const title = document.getElementById('rag-text-title').value.trim() || '快速录入文档.md';
       const text = document.getElementById('rag-text-content').value.trim();
       if (!text) return alert('请输入文本或制度内容');
-      if (!currentToken) return alert('请先在左侧登录账号');
+      if (!currentToken) return redirectToAuth('请先登录');
 
       try {
         const res = await fetch(`${API_BASE}/rag/ingest/text`, {
@@ -3268,7 +3433,7 @@
     async function queryRAGTest() {
       const query = document.getElementById('rag-search-query').value.trim();
       if (!query) return alert('请输入测试问题');
-      if (!currentToken) return alert('请先在左侧登录账号');
+      if (!currentToken) return redirectToAuth('请先登录');
 
       const resultsBox = document.getElementById('rag-search-results');
       resultsBox.innerHTML = '<div style="color: var(--accent-cyan); font-size: 0.75rem; text-align: center; padding: 0.8rem;">⏳ 双路混合检索中 (Milvus + BM25 + RRF)...</div>';
