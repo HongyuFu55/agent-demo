@@ -16,6 +16,32 @@ from app.core.logging import logger
 _DASHSCOPE_API_KEY = SecretStr(settings.DASHSCOPE_API_KEY)
 _DASHSCOPE_BASE_URL = settings.DASHSCOPE_BASE_URL
 
+# 代理 realm=cn 下真实可用的模型清单（默认 / 同系 / 跨厂商兜底排序）。
+# 来源：GET /v1/models?realm=cn
+_AVAILABLE_MODELS: List[str] = [
+    "deepseek-v4.1-flash",
+    "deepseek-v4-pro",
+    "glm-5.3",
+    "glm-5.3-flash",
+    "glm-5.2",
+    "glm-5.1",
+    "glm-5v-turbo",
+    "kimi-k3-1",
+    "kimi-k2.8-preview",
+    "kimi-k2.7",
+    "kimi-k2.6",
+    "kimi-k3.1-pro",
+    "minimax-m3",
+    "minimax-m3.1-flash",
+    "step-5-preview",
+    "mimo-v2.6-pro",
+    "hy3",
+    "hy4-preview-f",
+    "hy4free",
+    "hy4std",
+    "space-bunny",
+]
+
 
 class LLMRegistry:
     """可用 LLM 模型注册表，包含预初始化实例.
@@ -26,55 +52,16 @@ class LLMRegistry:
 
     LLMS: List[Dict[str, Any]] = [
         {
-            "name": "qwen-plus",
+            "name": name,
             "llm": ChatOpenAI(
-                model="qwen-plus",
-                api_key=_DASHSCOPE_API_KEY,
-                base_url=_DASHSCOPE_BASE_URL,
-                temperature=settings.DEFAULT_LLM_TEMPERATURE,
-                max_completion_tokens=settings.MAX_TOKENS,
-            ),
-        },
-        {
-            "name": "qwen-max",
-            "llm": ChatOpenAI(
-                model="qwen-max",
-                api_key=_DASHSCOPE_API_KEY,
-                base_url=_DASHSCOPE_BASE_URL,
-                temperature=settings.DEFAULT_LLM_TEMPERATURE,
-                max_completion_tokens=settings.MAX_TOKENS,
-            ),
-        },
-        {
-            "name": "qwen-turbo",
-            "llm": ChatOpenAI(
-                model="qwen-turbo",
-                api_key=_DASHSCOPE_API_KEY,
-                base_url=_DASHSCOPE_BASE_URL,
-                temperature=settings.DEFAULT_LLM_TEMPERATURE,
-                max_completion_tokens=settings.MAX_TOKENS,
-            ),
-        },
-        {
-            "name": "deepseek-v4-flash",
-            "llm": ChatOpenAI(
-                model="deepseek-v4-flash",
-                api_key=_DASHSCOPE_API_KEY,
-                base_url=_DASHSCOPE_BASE_URL,
-                temperature=settings.DEFAULT_LLM_TEMPERATURE,
-                max_completion_tokens=settings.MAX_TOKENS,
-            ),
-        },
-        {
-            "name": "deepseek-v4-pro",
-            "llm": ChatOpenAI(
-                model="deepseek-v4-pro",
+                model=name,
                 api_key=_DASHSCOPE_API_KEY,
                 base_url=_DASHSCOPE_BASE_URL,
                 temperature=settings.DEFAULT_LLM_TEMPERATURE,
                 max_completion_tokens=settings.MAX_TOKENS,
             ),
         }
+        for name in _AVAILABLE_MODELS
     ]
 
     @classmethod
